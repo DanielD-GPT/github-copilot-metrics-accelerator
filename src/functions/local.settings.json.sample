@@ -3,17 +3,30 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "python",
+
     "KEY_VAULT_NAME": "<your-key-vault-name>",
     "GITHUB_CREDENTIAL_SECRET_NAME": "github-credential",
+    "TEAMS_WEBHOOK_SECRET_NAME": "teams-webhook-secret",
+
     "GITHUB_ENTERPRISE": "<your-enterprise-slug>",
     "GITHUB_ORGS": "org-one,org-two",
     "GITHUB_APP_ID": "",
     "GITHUB_APP_INSTALLATION_ID": "",
+    "METRICS_SCOPE": "organization",
+
     "LAKE_ACCOUNT_NAME": "<your-lake-account>",
     "LAKE_FILESYSTEM_NAME": "raw",
     "SQL_CONNECTION_STRING": "Driver={ODBC Driver 18 for SQL Server};Server=tcp:<server>.database.windows.net,1433;Database=copilotmetrics;Authentication=ActiveDirectoryDefault;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60;",
+    "SQL_FAST_EXECUTEMANY": "true",
+
     "INGESTION_SCHEDULE": "0 0 2 * * *",
     "BACKFILL_DAYS": "28",
-    "RELOAD_TRAILING_DAYS": "7"
+    "MAX_BACKFILL_DAYS": "90",
+    "RELOAD_TRAILING_DAYS": "7",
+    "MAX_BILLING_USERS": "2000",
+    "FAIL_ON_EMPTY_REPORT": "true",
+
+    "REPORT_HOST_ALLOWLIST": "github.com,githubusercontent.com,githubassets.com,blob.core.windows.net",
+    "MAX_REPORT_BYTES": "67108864"
   }
 }

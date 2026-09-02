@@ -35,7 +35,6 @@ class Settings:
     # covers every org in one pull; organization is the fallback when the caller
     # only holds org-level permissions.
     metrics_scope: str = "enterprise"
-    billing_scope: str = "organization"
 
     # Per-user billing needs one request per user per day, so seat count and the
     # reload window together set the request volume. See docs/architecture.md.
@@ -59,7 +58,7 @@ class Settings:
     max_backfill_days: int = 90
 
     report_host_allowlist: tuple[str, ...] = _DEFAULT_REPORT_HOSTS
-    max_report_bytes: int = 268_435_456
+    max_report_bytes: int = 67_108_864
 
     # Fail the run when a report yields zero rows rather than silently loading nothing.
     fail_on_empty_report: bool = True
@@ -111,7 +110,6 @@ def load_settings() -> Settings:
         github_enterprise=os.environ.get("GITHUB_ENTERPRISE", "").strip(),
         github_orgs=_split_csv(os.environ.get("GITHUB_ORGS", "")),
         metrics_scope=os.environ.get("METRICS_SCOPE", "enterprise").strip().lower(),
-        billing_scope=os.environ.get("BILLING_SCOPE", "organization").strip().lower(),
         max_billing_users=int(os.environ.get("MAX_BILLING_USERS", "2000")),
         key_vault_name=os.environ.get("KEY_VAULT_NAME", ""),
         github_credential_secret_name=os.environ.get("GITHUB_CREDENTIAL_SECRET_NAME", "github-credential"),
@@ -126,6 +124,6 @@ def load_settings() -> Settings:
         max_backfill_days=int(os.environ.get("MAX_BACKFILL_DAYS", "90")),
         report_host_allowlist=tuple(_split_csv(os.environ.get("REPORT_HOST_ALLOWLIST", "")))
         or _DEFAULT_REPORT_HOSTS,
-        max_report_bytes=int(os.environ.get("MAX_REPORT_BYTES", str(268_435_456))),
+        max_report_bytes=int(os.environ.get("MAX_REPORT_BYTES", str(67_108_864))),
         fail_on_empty_report=_flag(os.environ.get("FAIL_ON_EMPTY_REPORT", "true"), True),
     )

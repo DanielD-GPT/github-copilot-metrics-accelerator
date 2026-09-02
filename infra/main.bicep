@@ -25,6 +25,12 @@ param githubEnterprise string
 @description('Comma-separated GitHub org slugs used by the Copilot seats API.')
 param githubOrgs string
 
+@description('GitHub App ID. Leave empty to authenticate with a PAT instead.')
+param githubAppId string = ''
+
+@description('GitHub App installation ID. Required when githubAppId is set.')
+param githubAppInstallationId string = ''
+
 @description('Daily ingestion schedule as an NCRONTAB expression (UTC).')
 param ingestionSchedule string = '0 0 2 * * *'
 
@@ -109,6 +115,8 @@ module functionApp './core/function.bicep' = {
     sqlDatabaseName: sql.outputs.databaseName
     githubEnterprise: githubEnterprise
     githubOrgs: githubOrgs
+    githubAppId: githubAppId
+    githubAppInstallationId: githubAppInstallationId
     ingestionSchedule: ingestionSchedule
   }
 }

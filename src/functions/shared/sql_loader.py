@@ -216,6 +216,7 @@ class SqlLoader:
             cursor = connection.cursor()
             cursor.execute(
                 """
+                SET NOCOUNT ON;
                 DECLARE @run_id BIGINT, @status VARCHAR(20);
                 EXEC dbo.sp_begin_run ?, ?, ?, 120, @run_id OUTPUT, @status OUTPUT;
                 SELECT @run_id AS run_id, @status AS status;

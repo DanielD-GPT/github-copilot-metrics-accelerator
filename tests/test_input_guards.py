@@ -66,6 +66,104 @@ class TestDownloadUrlGuard:
             client._check_download_url("https://api.github.com/report")
 
 
+class _FakeResponse:
+    def __init__(self, status_code, headers=None, body=b""):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._body = body
+        self.closed = False
+
+    @property
+    def is_redirect(self):
+        return "Location" in self.headers and self.status_code in (301, 302, 303, 307, 308)
+
+    @property
+    def is_permanent_redirect(self):
+        return self.status_code in (301, 308) and "Location" in self.headers
+
+    @property
+    def ok(self):
+        return self.status_code < 400
+
+    def iter_content(self, size):
+        yield self._body
+
+    def close(self):
+        self.closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+class _FakeSession:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.requested = []
+
+    def get(self, url, **kwargs):
+        self.requested.append(url)
+        return self._responses.pop(0)
+
+
+class TestRedirectHandling:
+    """Report links redirect to storage; every hop must be resolved and re-validated."""
+
+    def test_resolves_a_relative_location(self):
+        client = _client()
+        client._session = _FakeSession([
+            _FakeResponse(302, {"Location": "/files/report.ndjson"}),
+            _FakeResponse(200, body=b'{"a":1}'),
+        ])
+
+        assert client._fetch_download("https://api.github.com/reports/x") == b'{"a":1}'
+        # Relative Location resolved against the previous URL, not rejected.
+        assert client._session.requested[1] == "https://api.github.com/files/report.ndjson"
+
+    def test_follows_an_absolute_location(self):
+        client = _client()
+        client._session = _FakeSession([
+            _FakeResponse(302, {"Location": "https://objects.githubusercontent.com/r.ndjson"}),
+            _FakeResponse(200, body=b"{}"),
+        ])
+
+        assert client._fetch_download("https://api.github.com/reports/x") == b"{}"
+
+    def test_rejects_a_redirect_to_a_disallowed_host(self):
+        client = _client()
+        client._session = _FakeSession([
+            _FakeResponse(302, {"Location": "https://evil.example.com/x"}),
+        ])
+
+        with pytest.raises(GitHubError, match="unexpected host"):
+            client._fetch_download("https://api.github.com/reports/x")
+
+    def test_rejects_redirect_without_location(self):
+        client = _client()
+        client._session = _FakeSession([_FakeResponse(302, body=b"")])
+
+        with pytest.raises(GitHubError, match="no usable Location"):
+            client._fetch_download("https://api.github.com/reports/x")
+
+    def test_rejects_a_redirect_loop(self):
+        client = _client()
+        client._session = _FakeSession(
+            [_FakeResponse(302, {"Location": "https://api.github.com/loop"})] * 6
+        )
+
+        with pytest.raises(GitHubError, match="redirects"):
+            client._fetch_download("https://api.github.com/reports/x")
+
+    def test_enforces_the_byte_cap_while_streaming(self):
+        client = _client(max_report_bytes=8)
+        client._session = _FakeSession([_FakeResponse(200, body=b"x" * 64)])
+
+        with pytest.raises(GitHubError, match="MAX_REPORT_BYTES"):
+            client._fetch_download("https://api.github.com/reports/x")
+
+
 class TestDecompressionCap:
     def test_rejects_a_zip_bomb(self):
         import zlib
@@ -77,6 +175,15 @@ class TestDecompressionCap:
         client = _client(max_report_bytes=1024)
         with pytest.raises(GitHubError, match="MAX_REPORT_BYTES"):
             client._gunzip_capped(blob)
+
+    def test_rejects_a_truncated_archive(self):
+        import zlib
+
+        payload = zlib.compressobj(9, zlib.DEFLATED, 16 + zlib.MAX_WBITS)
+        blob = payload.compress(b'{"a":1}' * 100) + payload.flush()
+
+        with pytest.raises(GitHubError, match="truncated"):
+            _client()._gunzip_capped(blob[:-20])
 
     def test_allows_content_within_the_cap(self):
         import zlib

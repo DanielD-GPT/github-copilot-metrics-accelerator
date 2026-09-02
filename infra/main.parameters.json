@@ -23,6 +23,12 @@
     "githubOrgs": {
       "value": "${GITHUB_ORGS}"
     },
+    "githubAppId": {
+      "value": "${GITHUB_APP_ID=}"
+    },
+    "githubAppInstallationId": {
+      "value": "${GITHUB_APP_INSTALLATION_ID=}"
+    },
     "ingestionSchedule": {
       "value": "${INGESTION_SCHEDULE=0 0 2 * * *}"
     },

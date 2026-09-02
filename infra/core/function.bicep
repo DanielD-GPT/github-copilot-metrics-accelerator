@@ -19,6 +19,12 @@ param githubCredentialSecretName string = 'github-credential'
 @description('Name of the Key Vault secret holding the Teams outgoing webhook shared secret.')
 param teamsWebhookSecretName string = 'teams-webhook-secret'
 
+@description('GitHub App ID. Leave empty to authenticate with a PAT instead.')
+param githubAppId string = ''
+
+@description('GitHub App installation ID. Required when githubAppId is set.')
+param githubAppInstallationId string = ''
+
 var deploymentContainerName = 'deploymentpackage'
 
 resource deploymentStorage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -139,6 +145,14 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: githubOrgs
         }
         {
+          name: 'GITHUB_APP_ID'
+          value: githubAppId
+        }
+        {
+          name: 'GITHUB_APP_INSTALLATION_ID'
+          value: githubAppInstallationId
+        }
+        {
           name: 'LAKE_ACCOUNT_NAME'
           value: lakeAccountName
         }
@@ -180,7 +194,11 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         }
         {
           name: 'MAX_REPORT_BYTES'
-          value: '268435456'
+          value: '67108864'
+        }
+        {
+          name: 'REPORT_HOST_ALLOWLIST'
+          value: 'github.com,githubusercontent.com,githubassets.com,blob.${environment().suffixes.storage}'
         }
         {
           name: 'FAIL_ON_EMPTY_REPORT'

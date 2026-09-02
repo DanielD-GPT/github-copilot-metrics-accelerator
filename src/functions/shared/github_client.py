@@ -14,7 +14,7 @@ import zlib
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import jwt
 import requests
@@ -34,6 +34,7 @@ MAX_RETRIES = 5
 DOWNLOAD_TIMEOUT_SECONDS = 300
 MAX_REDIRECTS = 3
 CHUNK_BYTES = 65536
+REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 
 
 class GitHubError(RuntimeError):
@@ -204,10 +205,15 @@ class GitHubClient:
                 response.close()
                 if not location:
                     raise GitHubError("Report link redirected without a Location header.")
-                current = location
+                # Location is frequently relative; resolve it before validating the next hop.
+                current = urljoin(current, location)
                 continue
 
             with response:
+                if response.status_code in REDIRECT_CODES:
+                    raise GitHubError(
+                        f"Report link returned {response.status_code} with no usable Location."
+                    )
                 if not response.ok:
                     raise GitHubError(f"Report download failed with {response.status_code}.")
                 return self._read_capped(response)
@@ -253,6 +259,8 @@ class GitHubClient:
 
         if decompressor.unconsumed_tail:
             raise GitHubError(f"Report expanded beyond MAX_REPORT_BYTES ({limit}).")
+        if not decompressor.eof:
+            raise GitHubError("Report archive ended unexpectedly; the download may be truncated.")
 
         return out
 
