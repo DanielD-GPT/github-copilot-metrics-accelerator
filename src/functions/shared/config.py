@@ -30,6 +30,9 @@ class Settings:
     # reload window together set the request volume. See docs/architecture.md.
     max_billing_users: int = 2000
 
+    # Escape hatch: disable if a driver version mishandles bulk parameter binding.
+    sql_fast_executemany: bool = True
+
     key_vault_name: str = ""
     github_credential_secret_name: str = "github-credential"  # noqa: S105 - secret name, not a secret
     github_app_id: str = ""
@@ -95,6 +98,7 @@ def load_settings() -> Settings:
         lake_account_name=os.environ.get("LAKE_ACCOUNT_NAME", ""),
         lake_filesystem_name=os.environ.get("LAKE_FILESYSTEM_NAME", "raw"),
         sql_connection_string=os.environ.get("SQL_CONNECTION_STRING", ""),
+        sql_fast_executemany=_flag(os.environ.get("SQL_FAST_EXECUTEMANY", "true"), True),
         backfill_days=int(os.environ.get("BACKFILL_DAYS", "28")),
         reload_trailing_days=int(os.environ.get("RELOAD_TRAILING_DAYS", "7")),
         fail_on_empty_report=_flag(os.environ.get("FAIL_ON_EMPTY_REPORT", "true"), True),

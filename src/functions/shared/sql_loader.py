@@ -64,6 +64,71 @@ STAGING_TABLES: dict[str, tuple[str, list[str]]] = {
     "seats": ("stg.seats", SEAT_COLUMNS),
 }
 
+# With fast_executemany, pyodbc infers parameter types from the first row. A None or a
+# low-precision value there can silently truncate every later row, which on money columns
+# produces plausible-looking wrong numbers. Pinning the types removes the guess.
+
+
+def _text(length: int) -> tuple:
+    return (pyodbc.SQL_VARCHAR, length, 0)
+
+
+_MONEY = (pyodbc.SQL_DECIMAL, 18, 4)
+_RATE = (pyodbc.SQL_DECIMAL, 18, 6)
+_DATE = _text(10)        # transforms emit ISO date strings
+_TIMESTAMP = _text(32)   # ISO 8601 with timezone suffix
+_BIGINT = (pyodbc.SQL_BIGINT, 0, 0)
+_INT = (pyodbc.SQL_INTEGER, 0, 0)
+_BIT = (pyodbc.SQL_TINYINT, 0, 0)
+
+COLUMN_TYPES: dict[str, tuple] = {
+    "activity_date": _DATE,
+    "usage_date": _DATE,
+    "pending_cancellation_date": _DATE,
+    "created_at": _TIMESTAMP,
+    "last_activity_at": _TIMESTAMP,
+    "user_login": _text(100),
+    "org_login": _text(100),
+    "organization_id": _text(50),
+    "enterprise_id": _text(50),
+    "user_id": _BIGINT,
+    "team_id": _BIGINT,
+    "team_slug": _text(200),
+    "team_name": _text(200),
+    "ai_credits_used": _MONEY,
+    "adoption_phase": _text(50),
+    "adoption_phase_number": _INT,
+    "ide": _text(100),
+    "ide_family": _text(50),
+    "last_known_ide_version": _text(100),
+    "last_known_plugin_version": _text(100),
+    "model_name": _text(100),
+    "feature": _text(50),
+    "product": _text(100),
+    "sku": _text(200),
+    "unit_type": _text(50),
+    "plan_type": _text(50),
+    "last_activity_editor": _text(100),
+    "price_per_unit": _RATE,
+    "gross_quantity": _MONEY,
+    "discount_quantity": _MONEY,
+    "net_quantity": _MONEY,
+    "gross_amount": _MONEY,
+    "discount_amount": _MONEY,
+    "net_amount": _MONEY,
+}
+
+COLUMN_TYPES.update(dict.fromkeys(_ACTIVITY_COUNTS, _INT))
+COLUMN_TYPES.update(
+    dict.fromkeys(
+        [
+            "used_agent", "used_chat", "used_cli", "used_copilot_app",
+            "used_copilot_cloud_agent", "used_code_review_active", "used_code_review_passive",
+        ],
+        _BIT,
+    )
+)
+
 
 class RunInProgress(RuntimeError):
     """Another ingestion run holds the lock."""
@@ -72,6 +137,7 @@ class RunInProgress(RuntimeError):
 class SqlLoader:
     def __init__(self, settings: Settings):
         self._connection_string = settings.sql_connection_string
+        self._fast_executemany = settings.sql_fast_executemany
 
     def _connect(self) -> pyodbc.Connection:
         # Serverless SQL may be paused; the driver retries while it resumes.
@@ -95,7 +161,10 @@ class SqlLoader:
         # Every value is still bound as a parameter.
         statement = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"  # noqa: S608
 
-        cursor.fast_executemany = True
+        if self._fast_executemany:
+            cursor.fast_executemany = True
+            cursor.setinputsizes([COLUMN_TYPES.get(c) for c in columns])
+
         total = 0
         for start in range(0, len(rows), BATCH_SIZE):
             chunk = rows[start : start + BATCH_SIZE]
@@ -112,14 +181,17 @@ class SqlLoader:
         # connection explicitly to avoid leaking one per invocation.
         connection = self._connect()
         try:
-            cursor = connection.cursor()
-
             for key, (table, columns) in STAGING_TABLES.items():
+                # A cursor per table: setinputsizes persists, so reusing one would
+                # carry stale type bindings into the next statement.
+                cursor = connection.cursor()
                 # DELETE rather than TRUNCATE so the identity needs no ALTER grant.
                 # `table` is a module constant, not caller input.
                 cursor.execute(f"DELETE FROM {table}")  # noqa: S608
                 counts[key] = self._bulk_insert(cursor, table, columns, datasets.get(key) or [])
+                cursor.close()
 
+            cursor = connection.cursor()
             cursor.execute("{CALL dbo.sp_load_all (?)}", 1 if strict else 0)
             while cursor.nextset():
                 pass

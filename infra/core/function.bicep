@@ -171,6 +171,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: '2000'
         }
         {
+          name: 'SQL_FAST_EXECUTEMANY'
+          value: 'true'
+        }
+        {
           name: 'FAIL_ON_EMPTY_REPORT'
           value: 'true'
         }

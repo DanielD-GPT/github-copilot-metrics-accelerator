@@ -104,6 +104,7 @@ Because every payload is archived, you can rebuild the warehouse without calling
 | All spend shows one editor | User genuinely used one IDE, or `weight_basis = equal_split` | Check `fact_user_ide_share.weight_basis` |
 | Team totals look low | GitHub omits teams under 5 seated users | Expected; use `vw_spend_by_user_model` for complete totals |
 | `Data source name not found` | ODBC driver missing locally | Install ODBC Driver 18; it is preinstalled on the Functions Linux image |
+| Money values look rounded or truncated | Driver mishandling bulk parameter binding | Parameter types are pinned in `sql_loader.COLUMN_TYPES`; set `SQL_FAST_EXECUTEMANY=false` to fall back to row-by-row binding and compare |
 | SQL connection times out on first call | Serverless database resuming | Connection timeout is 60s; retry succeeds |
 
 ## Cost control

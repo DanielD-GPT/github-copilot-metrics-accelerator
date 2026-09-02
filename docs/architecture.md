@@ -124,6 +124,7 @@ last **successful** run. Set `FAIL_ON_EMPTY_REPORT=false` to downgrade these to 
 | Transport | HTTPS only, TLS 1.2 minimum, FTPS disabled |
 | Storage | Shared key access disabled, public blob access disabled |
 | Error handling | API responses return generic messages; detail goes to Application Insights only |
+| Numeric precision | Bulk insert parameter types are pinned explicitly, so money values cannot be truncated by driver type inference |
 
 ### Not yet addressed
 
