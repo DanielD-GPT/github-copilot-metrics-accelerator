@@ -114,6 +114,8 @@ last **successful** run. Set `FAIL_ON_EMPTY_REPORT=false` to downgrade these to 
 ### Not yet addressed
 
 - **No per-caller authorization.** Any holder of the function key can query any individual's spend.
+- **Row-level security is deployed but disabled.** Turning it on is one statement, and deliberately
+  left to the customer so a first deployment succeeds without access mapping.
 - **Public network access is enabled** on SQL, Storage, and Key Vault for first-run simplicity.
   Production should add Private Endpoints and set `defaultAction: 'Deny'`.
 
@@ -126,8 +128,10 @@ Before deploying, settle:
 
 - The lawful basis for processing, and whether a DPIA is required
 - Works council or employee representative consultation, where applicable
-- Who may see individual-level rows — enable row-level security rather than sharing broadly
-- A retention and deletion policy; the raw zone currently never auto-deletes
+- Who may see individual-level rows. Row-level security is deployed but **disabled by default** so
+  first deployments work out of the box; enable it in `sql/06_security.sql` before sharing reports
+  beyond the project team
+- A retention and deletion policy; `dbo.sp_purge_personal_data` and `rawRetentionDays` implement one
 
 Using this data for individual performance management is a decision to make deliberately and
 document, not one to arrive at by accident because the dashboard made it easy.

@@ -39,12 +39,18 @@ These are **documented gaps**, not oversights. Review them before production use
 
 4. **Function keys do not rotate automatically.** Rotate them on your own schedule.
 
+5. **Row-level security is off by default.** Anyone with database read access sees every
+   developer's activity and spend. Enabling RLS is a single statement; see
+   [Handling personal data](#handling-personal-data).
+
 ## Handling personal data
 
 This warehouse stores per-developer activity and spend keyed to a GitHub login, including IDE
 names and versions, lines of code added and deleted, and dollar amounts.
 
-- Row-level security ships **enabled**. See `sql/06_security.sql`.
+- Row-level security scaffolding is deployed but **disabled by default**, so a first deployment
+  works without access plumbing. Enable it before sharing reports beyond the project team —
+  see `sql/06_security.sql`.
 - `dbo.sp_forget_user` handles erasure requests.
 - `dbo.sp_purge_personal_data` enforces a retention window.
 - The raw zone deletes payloads after `rawRetentionDays` (default 730).

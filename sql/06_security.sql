@@ -1,9 +1,14 @@
 /*
-    06_security.sql — row-level security and personal-data controls.
+    06_security.sql — row-level security scaffolding and personal-data controls.
 
     This warehouse holds per-developer activity and spend keyed to a GitHub login.
-    RLS ships ENABLED so the restrictive path is the default rather than an informed
-    opt-in. Until you grant access, non-admin principals see zero rows.
+
+    The RLS policy is CREATED BUT DISABLED so a first deployment works end to end
+    without access plumbing. Everything needed to switch it on is already here —
+    enabling it is one statement. Decide deliberately who should see individual-level
+    rows, then turn it on before sharing reports beyond the project team.
+
+    The erasure and retention procedures below work regardless of the RLS state.
 
     Run after 01-04. Re-runnable.
 */
@@ -11,8 +16,8 @@
 IF SCHEMA_ID('rls') IS NULL EXEC('CREATE SCHEMA rls');
 GO
 
--- Members bypass RLS entirely. The Function App identity must be a member or
--- ingestion cannot read back what it wrote.
+-- Members bypass RLS when it is enabled. The Function App identity must be a member,
+-- or ingestion cannot read back what it wrote.
 IF DATABASE_PRINCIPAL_ID('copilot_metrics_admin') IS NULL
     CREATE ROLE copilot_metrics_admin;
 GO
@@ -50,21 +55,39 @@ RETURN
           );
 GO
 
+-- Created disabled. Enabling it is a deliberate choice - see the block below.
 IF NOT EXISTS (SELECT 1 FROM sys.security_policies WHERE name = 'user_access_policy')
     EXEC('
         CREATE SECURITY POLICY rls.user_access_policy
         ADD FILTER PREDICATE rls.fn_user_access(user_login, cost_center) ON dbo.dim_user
-        WITH (STATE = ON);
+        WITH (STATE = OFF);
     ');
 GO
 
 /*
-    To grant an analyst access to one cost center:
-        INSERT INTO dbo.report_access (principal_name, cost_center)
-        VALUES ('analyst@contoso.com', 'Platform Engineering');
+    ENABLING ROW-LEVEL SECURITY
 
-    To disable RLS for a pilot (understand the consequences first):
-        ALTER SECURITY POLICY rls.user_access_policy WITH (STATE = OFF);
+    1. Make sure the ingestion identity can still read what it writes:
+           ALTER ROLE copilot_metrics_admin ADD MEMBER [<function-app-name>];
+       (sql/05_grants.sql already does this.)
+
+    2. Add anyone who needs broad access:
+           INSERT INTO dbo.report_access (principal_name, cost_center)
+           VALUES ('analyst@contoso.com', 'Platform Engineering');
+           -- use '*' for enterprise-wide access
+
+    3. Turn the policy on:
+           ALTER SECURITY POLICY rls.user_access_policy WITH (STATE = ON);
+
+    Once enabled, a principal who is not an admin and has no report_access row sees
+    zero rows. That is expected, and it is the most common cause of an "empty report"
+    after switching it on.
+
+    To turn it back off:
+           ALTER SECURITY POLICY rls.user_access_policy WITH (STATE = OFF);
+
+    Check the current state:
+           SELECT name, is_enabled FROM sys.security_policies WHERE name = 'user_access_policy';
 */
 
 ---------------------------------------------------------------- data subject erasure

@@ -38,6 +38,18 @@ individual's own behaviour** — not from a team or org average. The `attributio
 > **Status: unverified against a live tenant.** The code targets GitHub's documented schema but has
 > not yet been run against a real enterprise. Run the validation script below before trusting output.
 
+### A note on privacy
+
+This pipeline collects per-developer activity — IDE names and versions, lines of code, interaction
+counts, and dollar spend — keyed to a GitHub login.
+
+To keep first deployments working out of the box, access controls are **deployed but not enabled**.
+Before sharing reports beyond the project team, review [SECURITY.md](SECURITY.md) and decide:
+
+- Whether to enable row-level security (`sql/06_security.sql`, one statement)
+- Your retention period (`dbo.sp_purge_personal_data`, and `rawRetentionDays` on the lake)
+- Whether a DPIA or works council consultation applies in your jurisdictions
+
 ---
 
 ## Architecture

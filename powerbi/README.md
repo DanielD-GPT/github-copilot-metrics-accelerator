@@ -124,7 +124,13 @@ This is the page that answers the original question.
 
 ## 5. Governance
 
-Add row-level security so managers see only their own org:
+There are two independent places to restrict access. Both are **off by default**.
+
+**Database level** — `sql/06_security.sql` deploys a row-level security policy in a disabled state.
+Enabling it filters every view for every consumer, including Power BI. Best when several tools read
+the warehouse.
+
+**Report level** — Power BI RLS, applied only to this report:
 
 ```dax
 -- Role: TeamManager, applied to 'Spend (exact)' and 'Spend (allocated)'
@@ -135,7 +141,8 @@ Add row-level security so managers see only their own org:
 ```
 
 Individual developer spend is sensitive. Treat this report as management information, restrict it
-by RLS, and agree internally how it will and will not be used before publishing broadly.
+at one of the two layers above, and agree internally how it will and will not be used before
+publishing broadly.
 
 ## Troubleshooting
 
