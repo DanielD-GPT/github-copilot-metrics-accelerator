@@ -34,6 +34,10 @@ app.register_blueprint(teams_bp)
 
 LOGGER = logging.getLogger(__name__)
 
+
+class SeatsUnavailable(RuntimeError):
+    """An org returned no Copilot seats, so its spend cannot be attributed."""
+
 DATASET_KEYS = (
     "user_day",
     "user_ide",
@@ -104,6 +108,18 @@ def _pull_billing(client, lake, settings, org: str, seat_rows, since: date, unti
     """Per-user spend. The billing API only attributes cost when filtered by user,
     so this costs one request per user per period."""
     logins = sorted({row["user_login"] for row in seat_rows if row.get("user_login")})
+
+    if not logins:
+        # Without seats there is nobody to bill against, so the run would report
+        # success with zero spend. That is the failure mode this guards.
+        message = (
+            f"Org {org} returned no Copilot seats, so no spend can be attributed. "
+            "This usually means the token lacks org read or billing manager permission."
+        )
+        if settings.fail_on_empty_report:
+            raise SeatsUnavailable(message)
+        LOGGER.warning(message)
+        return []
 
     if len(logins) > settings.max_billing_users:
         LOGGER.warning(

@@ -467,6 +467,7 @@ BEGIN
     DECLARE @stg_billing INT = (SELECT COUNT(*) FROM stg.premium_requests);
     DECLARE @stg_user_day INT = (SELECT COUNT(*) FROM stg.user_day);
     DECLARE @stg_ide INT = (SELECT COUNT(*) FROM stg.user_ide);
+    DECLARE @stg_seats INT = (SELECT COUNT(*) FROM stg.seats);
 
     DECLARE @orphan_billing INT = (
         SELECT COUNT(*)
@@ -484,6 +485,7 @@ BEGIN
     DECLARE @message NVARCHAR(2000) = CONCAT(
         'staging rows -> user_day:', @stg_user_day,
         ' user_ide:', @stg_ide,
+        ' seats:', @stg_seats,
         ' billing:', @stg_billing,
         ' orphaned_billing:', @orphan_billing);
 
@@ -495,8 +497,18 @@ BEGIN
     IF @strict = 1 AND @stg_user_day = 0 AND @stg_billing = 0
         THROW 51002, 'No metrics and no billing rows were staged; the extract returned nothing.', 1;
 
+    -- Seats drive the billing fan-out. Activity without seats means the seats call
+    -- failed, and every dollar would silently land as zero.
+    IF @strict = 1 AND @stg_user_day > 0 AND @stg_seats = 0
+        THROW 51005, 'Metrics staged but no Copilot seats; spend cannot be attributed. Check billing permissions.', 1;
+
+    -- Zero spend can be legitimate, so warn rather than fail.
+    IF @stg_seats > 0 AND @stg_billing = 0
+        PRINT 'WARNING: seats present but no billing rows staged. Verify premium request permissions.';
+
     SELECT @stg_user_day AS rows_user_day, @stg_ide AS rows_user_ide,
-           @stg_billing AS rows_premium_requests, @orphan_billing AS orphaned_billing;
+           @stg_seats AS rows_seats, @stg_billing AS rows_premium_requests,
+           @orphan_billing AS orphaned_billing;
 END;
 GO
 

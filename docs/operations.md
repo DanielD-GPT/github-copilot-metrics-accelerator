@@ -94,6 +94,9 @@ Because every payload is archived, you can rebuild the warehouse without calling
 | `Login failed for user '<token-identified principal>'` | Managed identity has no database user | Run `sql/05_grants.sql` with the Function App name |
 | Error 51001 on load | Billing rows could not map to dimensions | Inspect `stg.premium_requests` for blank `product` or `org_login` |
 | Error 51002 on load | Extract returned nothing at all | Run `scripts/validate_github_api.py`; check the metrics policy is enabled |
+| Error 51005 on load | Activity staged but zero Copilot seats | Seats call failed — token needs `read:org` and billing manager. Without seats no spend can be attributed |
+| `SeatsUnavailable` in logs | Same cause, caught earlier in the pull | Fix permissions, or set `FAIL_ON_EMPTY_REPORT=false` to downgrade to a warning |
+| `WARNING: seats present but no billing rows` | Seats resolved but no spend returned | May be legitimate (no premium requests), or premium request permission is missing |
 | `200 OK but no download_links` | Report not generated for that day, or policy disabled | Try an earlier `--day`; confirm *Copilot usage metrics* is *Enabled everywhere* |
 | Report download 403 | Signed URL expired or an auth header was sent | Links are short-lived; re-resolve them rather than caching |
 | 403 with `X-RateLimit-Remaining: 0` | Billing fan-out exhausted the hourly limit | Set `BILLING_GRANULARITY=month`, lower `MAX_BILLING_USERS`, or use a GitHub App |

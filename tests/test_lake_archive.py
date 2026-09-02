@@ -140,3 +140,39 @@ class TestPullBillingArchive:
 
         # 2 users x 3 days
         assert len(client.calls) == 6
+
+
+class TestSeatsGuard:
+    """No seats means no billing fan-out, which would look like zero spend."""
+
+    def test_raises_when_no_seats(self, billing_payload):
+        from function_app import SeatsUnavailable, _pull_billing
+
+        with pytest.raises(SeatsUnavailable, match="no Copilot seats"):
+            _pull_billing(
+                _FakeClient(billing_payload), _FakeLake(), _settings(), "acme", [],
+                date(2026, 8, 1), date(2026, 8, 1),
+            )
+
+    def test_raises_when_seats_have_no_logins(self, billing_payload):
+        from function_app import SeatsUnavailable, _pull_billing
+
+        # A seat with no assignee yields a blank login and must not count.
+        with pytest.raises(SeatsUnavailable):
+            _pull_billing(
+                _FakeClient(billing_payload), _FakeLake(), _settings(),
+                "acme", [{"user_login": ""}], date(2026, 8, 1), date(2026, 8, 1),
+            )
+
+    def test_downgrades_to_warning_when_not_strict(self, billing_payload, caplog):
+        from function_app import _pull_billing
+
+        client = _FakeClient(billing_payload)
+        rows = _pull_billing(
+            client, _FakeLake(), _settings(fail_on_empty_report=False), "acme", [],
+            date(2026, 8, 1), date(2026, 8, 1),
+        )
+
+        assert rows == []
+        assert client.calls == []
+        assert "no Copilot seats" in caplog.text
