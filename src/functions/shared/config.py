@@ -15,6 +15,17 @@ def _flag(value: str, default: bool = False) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+# Report download links are pre-signed URLs supplied by the API response. Restricting
+# the host stops a tampered or unexpected response turning the Function into an SSRF
+# proxy. Confirm the real host with scripts/validate_github_api.py and extend if needed.
+_DEFAULT_REPORT_HOSTS = (
+    "github.com",
+    "githubusercontent.com",
+    "githubassets.com",
+    "blob.core.windows.net",
+)
+
+
 @dataclass(frozen=True)
 class Settings:
     github_enterprise: str = ""
@@ -42,6 +53,13 @@ class Settings:
     sql_connection_string: str = ""
     backfill_days: int = 28
     reload_trailing_days: int = 7
+
+    # Caps the range a single backfill request may ask for. Without it one call can
+    # queue months of per-user billing requests and hold the ingestion lock throughout.
+    max_backfill_days: int = 90
+
+    report_host_allowlist: tuple[str, ...] = _DEFAULT_REPORT_HOSTS
+    max_report_bytes: int = 268_435_456
 
     # Fail the run when a report yields zero rows rather than silently loading nothing.
     fail_on_empty_report: bool = True
@@ -79,6 +97,10 @@ class Settings:
             problems.append("SQL_CONNECTION_STRING is required.")
         if not self.lake_account_name:
             problems.append("LAKE_ACCOUNT_NAME is required.")
+        if self.max_backfill_days < 1:
+            problems.append("MAX_BACKFILL_DAYS must be at least 1.")
+        if not self.report_host_allowlist:
+            problems.append("REPORT_HOST_ALLOWLIST must not be empty.")
 
         if problems:
             raise ValueError("Invalid configuration: " + " ".join(problems))
@@ -101,5 +123,9 @@ def load_settings() -> Settings:
         sql_fast_executemany=_flag(os.environ.get("SQL_FAST_EXECUTEMANY", "true"), True),
         backfill_days=int(os.environ.get("BACKFILL_DAYS", "28")),
         reload_trailing_days=int(os.environ.get("RELOAD_TRAILING_DAYS", "7")),
+        max_backfill_days=int(os.environ.get("MAX_BACKFILL_DAYS", "90")),
+        report_host_allowlist=tuple(_split_csv(os.environ.get("REPORT_HOST_ALLOWLIST", "")))
+        or _DEFAULT_REPORT_HOSTS,
+        max_report_bytes=int(os.environ.get("MAX_REPORT_BYTES", str(268_435_456))),
         fail_on_empty_report=_flag(os.environ.get("FAIL_ON_EMPTY_REPORT", "true"), True),
     )

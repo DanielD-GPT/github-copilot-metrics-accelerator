@@ -184,7 +184,12 @@ def check_metrics_report(
         return []
 
     present, missing = field_report(rows[0], EXPECTED[expected_key])
-    detail = f"{len(links)} link(s), {len(rows)} records\nfields present: {len(present)}/{len(present) + len(missing)}"
+    host = urllib.parse.urlparse(links[0]).hostname or "?"
+    detail = (
+        f"{len(links)} link(s), {len(rows)} records\n"
+        f"download host: {host}   <- must appear in REPORT_HOST_ALLOWLIST\n"
+        f"fields present: {len(present)}/{len(present) + len(missing)}"
+    )
     if missing:
         detail += f"\nMISSING: {missing}"
         result.add(label, "FAIL", detail)

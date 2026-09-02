@@ -125,6 +125,8 @@ last **successful** run. Set `FAIL_ON_EMPTY_REPORT=false` to downgrade these to 
 | Storage | Shared key access disabled, public blob access disabled |
 | Error handling | API responses return generic messages; detail goes to Application Insights only |
 | Numeric precision | Bulk insert parameter types are pinned explicitly, so money values cannot be truncated by driver type inference |
+| SSRF | Report download links are validated against `REPORT_HOST_ALLOWLIST` on every redirect hop, https only |
+| Resource limits | Downloads and gzip expansion are capped by `MAX_REPORT_BYTES`; backfill range is capped by `MAX_BACKFILL_DAYS` |
 
 ### Not yet addressed
 

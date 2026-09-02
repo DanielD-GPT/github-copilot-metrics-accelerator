@@ -75,8 +75,11 @@ Requests beyond GitHub's metrics retention (reports start 10 October 2025, rough
 history) return billing only — activity will be empty for those dates, so spend lands as
 `exact-unallocated`.
 
-> Do not run a backfill while the daily timer is running. They share staging tables and there is
-> no concurrency guard yet.
+A single request is capped at `MAX_BACKFILL_DAYS` (default 90). Split larger ranges into
+sequential calls; each holds the ingestion lock for its duration.
+
+> Do not run a backfill while the daily timer is running. They share staging tables, and the
+> second caller receives HTTP 409.
 
 ## Rebuilding from the raw zone
 
@@ -98,6 +101,9 @@ Because every payload is archived, you can rebuild the warehouse without calling
 | `SeatsUnavailable` in logs | Same cause, caught earlier in the pull | Fix permissions, or set `FAIL_ON_EMPTY_REPORT=false` to downgrade to a warning |
 | `WARNING: seats present but no billing rows` | Seats resolved but no spend returned | May be legitimate (no premium requests), or premium request permission is missing |
 | `200 OK but no download_links` | Report not generated for that day, or policy disabled | Try an earlier `--day`; confirm *Copilot usage metrics* is *Enabled everywhere* |
+| `Refusing report link from unexpected host` | GitHub serves reports from a host not in the allowlist | Confirm the host with the validation script, then add it to `REPORT_HOST_ALLOWLIST` |
+| `Report download exceeded MAX_REPORT_BYTES` | Report larger than the cap | Raise `MAX_REPORT_BYTES`, or narrow the window |
+| Backfill returns 400 `MAX_BACKFILL_DAYS` | Requested range too wide | Split into sequential requests |
 | Report download 403 | Signed URL expired or an auth header was sent | Links are short-lived; re-resolve them rather than caching |
 | 403 with `X-RateLimit-Remaining: 0` | Billing fan-out exhausted the hourly limit | Lower `MAX_BILLING_USERS` or `RELOAD_TRAILING_DAYS`, or authenticate with a GitHub App for a higher limit |
 | Run exceeds 30 minutes | Too many users × days | Reduce `RELOAD_TRAILING_DAYS` or switch to monthly billing |

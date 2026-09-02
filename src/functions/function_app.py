@@ -182,14 +182,27 @@ def ingest_backfill(req: func.HttpRequest) -> func.HttpResponse:
     except ValueError:
         body = {}
 
-    until = _parse_date(body.get("until")) or datetime.now(UTC).date() - timedelta(days=1)
-    since = _parse_date(body.get("since")) or until - timedelta(days=settings.backfill_days)
+    yesterday = datetime.now(UTC).date() - timedelta(days=1)
+
+    try:
+        until = _parse_date(body.get("until")) or yesterday
+        since = _parse_date(body.get("since")) or until - timedelta(days=settings.backfill_days)
+    except ValueError:
+        return _bad_request("'since' and 'until' must be ISO dates (YYYY-MM-DD).")
 
     if since > until:
-        return func.HttpResponse(
-            json.dumps({"error": "'since' must be on or before 'until'."}),
-            status_code=400,
-            mimetype="application/json",
+        return _bad_request("'since' must be on or before 'until'.")
+
+    if until > yesterday:
+        return _bad_request("'until' cannot be later than yesterday; today's data is not final.")
+
+    span = (until - since).days + 1
+    if span > settings.max_backfill_days:
+        # An unbounded range would queue months of per-user billing requests and hold
+        # the ingestion lock until the Function times out.
+        return _bad_request(
+            f"Requested {span} days, above MAX_BACKFILL_DAYS ({settings.max_backfill_days}). "
+            "Split the range into smaller requests."
         )
 
     try:
@@ -212,6 +225,14 @@ def ingest_backfill(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(
         json.dumps({"status": "ok", "since": since.isoformat(), "until": until.isoformat(), "rows": counts}),
         status_code=200,
+        mimetype="application/json",
+    )
+
+
+def _bad_request(message: str) -> func.HttpResponse:
+    return func.HttpResponse(
+        json.dumps({"error": message}),
+        status_code=400,
         mimetype="application/json",
     )
 

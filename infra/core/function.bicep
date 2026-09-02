@@ -159,6 +159,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: '28'
         }
         {
+          name: 'MAX_BACKFILL_DAYS'
+          value: '90'
+        }
+        {
           name: 'RELOAD_TRAILING_DAYS'
           value: '7'
         }
@@ -173,6 +177,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'SQL_FAST_EXECUTEMANY'
           value: 'true'
+        }
+        {
+          name: 'MAX_REPORT_BYTES'
+          value: '268435456'
         }
         {
           name: 'FAIL_ON_EMPTY_REPORT'

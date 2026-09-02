@@ -7,13 +7,14 @@ at a time.
 """
 from __future__ import annotations
 
-import gzip
 import json
 import logging
 import time
+import zlib
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -31,6 +32,8 @@ POLL_INTERVAL_SECONDS = 5
 POLL_MAX_ATTEMPTS = 24
 MAX_RETRIES = 5
 DOWNLOAD_TIMEOUT_SECONDS = 300
+MAX_REDIRECTS = 3
+CHUNK_BYTES = 65536
 
 
 class GitHubError(RuntimeError):
@@ -154,27 +157,104 @@ class GitHubClient:
 
     # ------------------------------------------------------- metrics reports
 
-    def _download_ndjson(self, url: str) -> list[dict[str, Any]]:
-        """Download links are pre-signed; our Authorization header would invalidate them."""
-        response = self._session.get(url, timeout=DOWNLOAD_TIMEOUT_SECONDS)
-        if not response.ok:
-            raise GitHubError(f"Report download failed with {response.status_code}.")
+    def _check_download_url(self, url: str) -> None:
+        """Reject links that would turn the report download into an SSRF primitive."""
+        parsed = urlparse(url)
 
-        body = response.content
+        if parsed.scheme != "https":
+            raise GitHubError(f"Refusing report link with scheme '{parsed.scheme}'; https required.")
+
+        host = (parsed.hostname or "").lower()
+        allowed = self._settings.report_host_allowlist
+        if not any(host == entry or host.endswith(f".{entry}") for entry in allowed):
+            raise GitHubError(
+                f"Refusing report link from unexpected host '{host}'. "
+                "Add it to REPORT_HOST_ALLOWLIST if it is legitimate."
+            )
+
+    def _read_capped(self, response: requests.Response) -> bytes:
+        limit = self._settings.max_report_bytes
+        chunks: list[bytes] = []
+        total = 0
+
+        for chunk in response.iter_content(CHUNK_BYTES):
+            total += len(chunk)
+            if total > limit:
+                raise GitHubError(f"Report download exceeded MAX_REPORT_BYTES ({limit}).")
+            chunks.append(chunk)
+
+        return b"".join(chunks)
+
+    def _fetch_download(self, url: str) -> bytes:
+        """Follow redirects manually so every hop is validated, not just the first."""
+        current = url
+
+        for _ in range(MAX_REDIRECTS + 1):
+            self._check_download_url(current)
+            # Pre-signed links carry their own auth; our header would invalidate them.
+            response = self._session.get(
+                current,
+                timeout=DOWNLOAD_TIMEOUT_SECONDS,
+                stream=True,
+                allow_redirects=False,
+            )
+
+            if response.is_redirect or response.is_permanent_redirect:
+                location = response.headers.get("Location")
+                response.close()
+                if not location:
+                    raise GitHubError("Report link redirected without a Location header.")
+                current = location
+                continue
+
+            with response:
+                if not response.ok:
+                    raise GitHubError(f"Report download failed with {response.status_code}.")
+                return self._read_capped(response)
+
+        raise GitHubError(f"Report link exceeded {MAX_REDIRECTS} redirects.")
+
+    def _download_ndjson(self, url: str) -> list[dict[str, Any]]:
+        body = self._fetch_download(url)
+
         if body[:2] == b"\x1f\x8b":
-            body = gzip.decompress(body)
+            body = self._gunzip_capped(body)
 
         rows: list[dict[str, Any]] = []
-        for line in body.decode("utf-8").splitlines():
+        malformed = 0
+
+        for line in body.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
             if not line:
                 continue
-            parsed = json.loads(line)
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
             if isinstance(parsed, list):
                 rows.extend(parsed)
             else:
                 rows.append(parsed)
+
+        if malformed:
+            # Tolerate the odd bad line, but a mostly-bad file means the format changed.
+            LOGGER.warning("Skipped %s malformed NDJSON lines from a report file.", malformed)
+            if malformed > len(rows):
+                raise GitHubError("Report file was mostly unparseable; the format may have changed.")
+
         return rows
+
+    def _gunzip_capped(self, body: bytes) -> bytes:
+        """Bounded decompression: a small archive can otherwise expand without limit."""
+        limit = self._settings.max_report_bytes
+        decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        out = decompressor.decompress(body, limit)
+
+        if decompressor.unconsumed_tail:
+            raise GitHubError(f"Report expanded beyond MAX_REPORT_BYTES ({limit}).")
+
+        return out
 
     def fetch_report(self, report: str, day: date, org: str | None = None) -> list[dict[str, Any]]:
         """Resolve a report's download links for a day, then fetch and parse them."""
