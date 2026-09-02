@@ -121,16 +121,30 @@ def _pull_billing(client, lake, settings, org: str, seat_rows, since: date, unti
     LOGGER.info("Billing pull for %s: %s users x %s periods.", org, len(logins), len(periods))
 
     rows: list[dict] = []
+    raw: list[dict] = []
+
     for login in logins:
         for period_date, day_part in periods:
             payload = client.premium_request_usage(
                 org, login, period_date.year, period_date.month, day_part
             )
-            if payload:
-                rows.extend(flatten_premium_requests(payload, org, login, period_date))
+            if not payload:
+                continue
 
-    if rows:
-        lake.write("premium_requests", until, rows, suffix=org)
+            # Archive the untouched response, not the flattened rows: the archive is
+            # only a replay source if it predates the transform.
+            raw.append(
+                {
+                    "user_login": login,
+                    "period": period_date.isoformat(),
+                    "granularity": settings.billing_granularity,
+                    "payload": payload,
+                }
+            )
+            rows.extend(flatten_premium_requests(payload, org, login, period_date))
+
+    if raw:
+        lake.write("premium_requests", until, raw, suffix=org)
     return rows
 
 

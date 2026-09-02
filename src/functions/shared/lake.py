@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 
 from azure.core.exceptions import ResourceExistsError
@@ -17,6 +18,15 @@ from azure.storage.filedatalake import DataLakeServiceClient
 from .config import Settings
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _json_default(value: Any) -> str:
+    """Serialize Decimal as a string, never a float, so money keeps full precision."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    raise TypeError(f"Cannot serialize {type(value).__name__} to JSON.")
 
 
 class RawZone:
@@ -37,7 +47,12 @@ class RawZone:
         name = f"{dataset}{('_' + suffix) if suffix else ''}_{stamp}.json"
         path = f"{dataset}/dt={partition_date.isoformat()}/{name}"
 
-        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        body = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=_json_default,
+        ).encode("utf-8")
         file_client = self._filesystem.get_file_client(path)
         file_client.upload_data(body, overwrite=True)
 
