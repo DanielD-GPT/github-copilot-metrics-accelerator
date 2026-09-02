@@ -1,0 +1,19 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "KEY_VAULT_NAME": "<your-key-vault-name>",
+    "GITHUB_CREDENTIAL_SECRET_NAME": "github-credential",
+    "GITHUB_ENTERPRISE": "<your-enterprise-slug>",
+    "GITHUB_ORGS": "org-one,org-two",
+    "GITHUB_APP_ID": "",
+    "GITHUB_APP_INSTALLATION_ID": "",
+    "LAKE_ACCOUNT_NAME": "<your-lake-account>",
+    "LAKE_FILESYSTEM_NAME": "raw",
+    "SQL_CONNECTION_STRING": "Driver={ODBC Driver 18 for SQL Server};Server=tcp:<server>.database.windows.net,1433;Database=copilotmetrics;Authentication=ActiveDirectoryDefault;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60;",
+    "INGESTION_SCHEDULE": "0 0 2 * * *",
+    "BACKFILL_DAYS": "28",
+    "RELOAD_TRAILING_DAYS": "7"
+  }
+}

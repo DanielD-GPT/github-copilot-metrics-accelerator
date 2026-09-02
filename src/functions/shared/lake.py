@@ -1,0 +1,45 @@
+"""Raw zone writer.
+
+Every payload is archived verbatim before parsing, so a transform bug can be fixed
+and the warehouse rebuilt without re-paying the per-user billing request cost.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from datetime import UTC, date, datetime
+from typing import Any
+
+from azure.core.exceptions import ResourceExistsError
+from azure.identity import DefaultAzureCredential
+from azure.storage.filedatalake import DataLakeServiceClient
+
+from .config import Settings
+
+LOGGER = logging.getLogger(__name__)
+
+
+class RawZone:
+    def __init__(self, settings: Settings, credential: DefaultAzureCredential | None = None):
+        self._settings = settings
+        self._service = DataLakeServiceClient(
+            account_url=settings.lake_url,
+            credential=credential or DefaultAzureCredential(),
+        )
+        self._filesystem = self._service.get_file_system_client(settings.lake_filesystem_name)
+        try:
+            self._filesystem.create_file_system()
+        except ResourceExistsError:
+            pass
+
+    def write(self, dataset: str, partition_date: date, payload: Any, suffix: str = "") -> str:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        name = f"{dataset}{('_' + suffix) if suffix else ''}_{stamp}.json"
+        path = f"{dataset}/dt={partition_date.isoformat()}/{name}"
+
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        file_client = self._filesystem.get_file_client(path)
+        file_client.upload_data(body, overwrite=True)
+
+        LOGGER.info("Archived %s bytes to %s", len(body), path)
+        return path

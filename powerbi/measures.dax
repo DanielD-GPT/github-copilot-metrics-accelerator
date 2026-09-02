@@ -1,0 +1,142 @@
+// DAX measures for the Copilot spend model.
+//
+// Fastest path: install Tabular Editor (free), connect to the open PBIX,
+// then Advanced Scripting > paste > run. Otherwise create each measure manually
+// via Modeling > New measure.
+//
+// Naming convention: measures ending in "(Exact)" come straight from billing.
+// Measures ending in "(Allocated)" involve the editor allocation model.
+
+// ============================================================ core: exact $
+
+Total Spend (Exact) :=
+SUM ( 'Spend (exact)'[net_amount] )
+
+Gross Spend (Exact) :=
+SUM ( 'Spend (exact)'[gross_amount] )
+
+Discount (Exact) :=
+SUM ( 'Spend (exact)'[discount_amount] )
+
+Premium Requests :=
+SUM ( 'Spend (exact)'[quantity] )
+
+Active Users :=
+DISTINCTCOUNT ( 'Spend (exact)'[user_login] )
+
+Models Used :=
+DISTINCTCOUNT ( 'Spend (exact)'[model_name] )
+
+Spend per Active User :=
+DIVIDE ( [Total Spend (Exact)], [Active Users] )
+
+Cost per Premium Request :=
+DIVIDE ( [Total Spend (Exact)], [Premium Requests] )
+
+// ==================================================== core: allocated by editor
+
+Total Spend (Allocated) :=
+SUM ( 'Spend (allocated)'[allocated_net_amount] )
+
+Allocated Requests :=
+SUM ( 'Spend (allocated)'[allocated_quantity] )
+
+// Share of allocated spend within the current filter context.
+Editor Share % :=
+DIVIDE (
+    [Total Spend (Allocated)],
+    CALCULATE ( [Total Spend (Allocated)], REMOVEFILTERS ( 'Spend (allocated)'[editor_family] ) )
+)
+
+// Spend that billing recorded but per-user activity could not attribute to an editor.
+Unallocated Spend :=
+CALCULATE (
+    [Total Spend (Allocated)],
+    'Spend (allocated)'[attribution_quality] = "exact-unallocated"
+)
+
+Unallocated % :=
+DIVIDE ( [Unallocated Spend], [Total Spend (Allocated)] )
+
+// Rows whose editor weight fell back to an equal split rather than observed activity.
+// A high value means the allocation is weakly evidenced for that slice.
+Equal Split Fallback % :=
+VAR Fallback =
+    CALCULATE ( [Total Spend (Allocated)], 'Spend (allocated)'[weight_basis] = "equal_split" )
+RETURN
+    DIVIDE ( Fallback, [Total Spend (Allocated)] )
+
+// ================================================================ time series
+
+Spend MTD :=
+TOTALMTD ( [Total Spend (Exact)], 'Date'[date] )
+
+Spend Last Month :=
+CALCULATE ( [Total Spend (Exact)], DATEADD ( 'Date'[date], -1, MONTH ) )
+
+Spend MoM % :=
+VAR Current = [Total Spend (Exact)]
+VAR Previous = [Spend Last Month]
+RETURN
+    DIVIDE ( Current - Previous, Previous )
+
+Spend Rolling 30d :=
+CALCULATE (
+    [Total Spend (Exact)],
+    DATESINPERIOD ( 'Date'[date], MAX ( 'Date'[date] ), -30, DAY )
+)
+
+Run Rate (Monthly) :=
+VAR DaysInWindow = 30
+VAR DaysInMonth = 30.4
+RETURN
+    DIVIDE ( [Spend Rolling 30d], DaysInWindow ) * DaysInMonth
+
+// ================================================================= engagement
+
+Interactions :=
+SUM ( 'Editor mix'[interactions] )
+
+Code Generations :=
+SUM ( 'Editor mix'[generations] )
+
+Code Acceptances :=
+SUM ( 'Editor mix'[acceptances] )
+
+// Acceptances over generations. Not a completions-only suggestion accept rate.
+Acceptance Rate :=
+DIVIDE ( [Code Acceptances], [Code Generations] )
+
+Active Users (Activity) :=
+DISTINCTCOUNT ( 'Editor mix'[active_users] )
+
+Lines Added :=
+SUM ( 'Editor mix'[loc_added] )
+
+Lines Deleted :=
+SUM ( 'Editor mix'[loc_deleted] )
+
+// ============================================================ seat efficiency
+
+Idle Seats :=
+COUNTROWS ( 'Idle seats' )
+
+Idle Seat Spend (30d) :=
+SUM ( 'Idle seats'[net_amount_30d] )
+
+// ============================================================ data governance
+
+// Put this on every report page that shows an editor or feature breakdown.
+Attribution Disclaimer :=
+"Per-user and per-model dollars are exact (GitHub premium request billing). " &
+"The editor and feature split is modelled from each user's own daily activity: " &
+"GitHub publishes IDE and model/feature breakdowns separately, not as a cross-product. " &
+"Treat the surface split as a defensible estimate, not an audit record."
+
+Data Freshness :=
+VAR Latest = MAX ( 'Spend (exact)'[usage_date] )
+RETURN
+    "Data through " & FORMAT ( Latest, "yyyy-MM-dd" )
+
+Days Since Refresh :=
+DATEDIFF ( MAX ( 'Spend (exact)'[usage_date] ), TODAY (), DAY )

@@ -1,0 +1,10 @@
+{
+  "resourcesResourceGroups": "rg-",
+  "operationalInsightsWorkspaces": "log-",
+  "insightsComponents": "appi-",
+  "keyVaultVaults": "kv",
+  "storageStorageAccounts": "st",
+  "sqlServers": "sql-",
+  "webServerFarms": "plan-",
+  "webSitesFunctions": "func-"
+}

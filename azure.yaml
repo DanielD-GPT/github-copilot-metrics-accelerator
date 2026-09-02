@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: github-copilot-metrics-accelerator
+metadata:
+  template: github-copilot-metrics-accelerator@1.0.0
+
+services:
+  ingest:
+    project: ./src/functions
+    language: python
+    host: function
+
+hooks:
+  postprovision:
+    windows:
+      shell: pwsh
+      continueOnError: false
+      interactive: true
+      run: ./scripts/postprovision.ps1
+    posix:
+      shell: sh
+      continueOnError: false
+      interactive: true
+      run: ./scripts/postprovision.sh

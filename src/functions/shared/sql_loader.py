@@ -1,0 +1,192 @@
+"""Load staging tables and invoke the MERGE procedures.
+
+Every load is idempotent: staging is truncated for the window being loaded, rows are
+bulk inserted, then a stored procedure upserts into the dims and facts. That makes it
+safe to re-run the trailing week to pick up GitHub's billing corrections.
+"""
+from __future__ import annotations
+
+import logging
+from collections.abc import Sequence
+from typing import Any
+
+import pyodbc
+
+from .config import Settings
+
+LOGGER = logging.getLogger(__name__)
+BATCH_SIZE = 1000
+
+_ACTIVITY_COUNTS = [
+    "user_initiated_interaction_count", "code_generation_activity_count",
+    "code_acceptance_activity_count", "loc_suggested_to_add_sum",
+    "loc_suggested_to_delete_sum", "loc_added_sum", "loc_deleted_sum",
+]
+
+USER_DAY_COLUMNS = [
+    "activity_date", "user_login", "user_id", "org_login", "organization_id",
+    "enterprise_id", "ai_credits_used", "adoption_phase", "adoption_phase_number",
+    "used_agent", "used_chat", "used_cli", "used_copilot_app",
+    "used_copilot_cloud_agent", "used_code_review_active", "used_code_review_passive",
+] + _ACTIVITY_COUNTS
+
+USER_IDE_COLUMNS = [
+    "activity_date", "user_login", "org_login", "ide", "ide_family",
+    "last_known_ide_version", "last_known_plugin_version",
+] + _ACTIVITY_COUNTS
+
+USER_MODEL_FEATURE_COLUMNS = [
+    "activity_date", "user_login", "org_login", "model_name", "feature",
+] + _ACTIVITY_COUNTS
+
+USER_TEAMS_COLUMNS = [
+    "activity_date", "user_login", "user_id", "org_login", "team_id", "team_slug",
+]
+
+BILLING_COLUMNS = [
+    "usage_date", "user_login", "org_login", "product", "sku", "model_name",
+    "unit_type", "price_per_unit", "gross_quantity", "discount_quantity",
+    "net_quantity", "gross_amount", "discount_amount", "net_amount",
+]
+
+SEAT_COLUMNS = [
+    "user_login", "user_id", "org_login", "team_name", "plan_type",
+    "created_at", "last_activity_at", "last_activity_editor", "pending_cancellation_date",
+]
+
+# Staging table -> column order used for bulk insert.
+STAGING_TABLES: dict[str, tuple[str, list[str]]] = {
+    "user_day": ("stg.user_day", USER_DAY_COLUMNS),
+    "user_ide": ("stg.user_ide", USER_IDE_COLUMNS),
+    "user_model_feature": ("stg.user_model_feature", USER_MODEL_FEATURE_COLUMNS),
+    "user_teams": ("stg.user_teams", USER_TEAMS_COLUMNS),
+    "premium_requests": ("stg.premium_requests", BILLING_COLUMNS),
+    "seats": ("stg.seats", SEAT_COLUMNS),
+}
+
+
+class RunInProgress(RuntimeError):
+    """Another ingestion run holds the lock."""
+
+
+class SqlLoader:
+    def __init__(self, settings: Settings):
+        self._connection_string = settings.sql_connection_string
+
+    def _connect(self) -> pyodbc.Connection:
+        # Serverless SQL may be paused; the driver retries while it resumes.
+        connection = pyodbc.connect(self._connection_string, timeout=60)
+        connection.autocommit = False
+        return connection
+
+    def _bulk_insert(
+        self,
+        cursor: pyodbc.Cursor,
+        table: str,
+        columns: Sequence[str],
+        rows: Sequence[dict[str, Any]],
+    ) -> int:
+        if not rows:
+            return 0
+
+        placeholders = ", ".join(["?"] * len(columns))
+        column_list = ", ".join(f"[{c}]" for c in columns)
+        # Table and column names come from the STAGING_TABLES constant, never from input.
+        # Every value is still bound as a parameter.
+        statement = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"  # noqa: S608
+
+        cursor.fast_executemany = True
+        total = 0
+        for start in range(0, len(rows), BATCH_SIZE):
+            chunk = rows[start : start + BATCH_SIZE]
+            cursor.executemany(statement, [[row.get(c) for c in columns] for row in chunk])
+            total += len(chunk)
+
+        return total
+
+    def load(self, datasets: dict[str, Sequence[dict[str, Any]]], strict: bool = True) -> dict[str, int]:
+        """Stage every dataset and run the merge in one transaction."""
+        counts: dict[str, int] = {}
+
+        # pyodbc's context manager commits but does not close, so manage the
+        # connection explicitly to avoid leaking one per invocation.
+        connection = self._connect()
+        try:
+            cursor = connection.cursor()
+
+            for key, (table, columns) in STAGING_TABLES.items():
+                # DELETE rather than TRUNCATE so the identity needs no ALTER grant.
+                # `table` is a module constant, not caller input.
+                cursor.execute(f"DELETE FROM {table}")  # noqa: S608
+                counts[key] = self._bulk_insert(cursor, table, columns, datasets.get(key) or [])
+
+            cursor.execute("{CALL dbo.sp_load_all (?)}", 1 if strict else 0)
+            while cursor.nextset():
+                pass
+
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            LOGGER.exception("SQL load failed; transaction rolled back.")
+            raise
+        finally:
+            connection.close()
+
+        LOGGER.info("Staged rows: %s", counts)
+        return counts
+
+    def begin_run(self, since, until, trigger_source: str) -> int:
+        """Claim the ingestion lock. Raises RunInProgress if another run holds it."""
+        connection = self._connect()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                DECLARE @run_id BIGINT;
+                EXEC dbo.sp_begin_run ?, ?, ?, 120, @run_id OUTPUT;
+                SELECT @run_id AS run_id;
+                """,
+                trigger_source,
+                since,
+                until,
+            )
+            row = cursor.fetchone()
+            connection.commit()
+            return int(row[0])
+        except pyodbc.Error as exc:
+            connection.rollback()
+            text = str(exc)
+            if "51003" in text or "51004" in text or "already in progress" in text:
+                raise RunInProgress("An ingestion run is already in progress.") from exc
+            raise
+        finally:
+            connection.close()
+
+    def complete_run(
+        self,
+        run_id: int,
+        status: str,
+        counts: dict[str, int] | None = None,
+        message: str | None = None,
+    ) -> None:
+        counts = counts or {}
+        connection = self._connect()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "{CALL dbo.sp_complete_run (?, ?, ?, ?, ?, ?, ?, ?)}",
+                run_id,
+                status,
+                counts.get("user_day", 0),
+                counts.get("user_ide", 0),
+                counts.get("user_model_feature", 0),
+                counts.get("premium_requests", 0),
+                counts.get("seats", 0),
+                (message or "")[:2000],
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            LOGGER.exception("Could not close out ingestion_run %s.", run_id)
+        finally:
+            connection.close()

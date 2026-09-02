@@ -1,0 +1,32 @@
+# Azure
+.azure/*.env
+.azure/**/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python_version
+
+# Azure Functions
+local.settings.json
+bin/
+obj/
+.func/
+
+# Secrets — never commit
+*.pem
+*.key
+*.pfx
+.env
+secrets.json
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
