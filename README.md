@@ -302,8 +302,9 @@ docs/             Architecture, operations, API/bot, customization
 
 - **Cost centers** — populate `dim_user.cost_center`, or join to your HR/CMDB source.
 - **Allocation weighting** — the editor split lives in one place, `dbo.sp_build_user_ide_share`.
-- **Billing cost** — per-user billing costs one request per user per period. Set
-  `BILLING_GRANULARITY=month` to cut request volume ~30× at the cost of daily precision.
+- **Billing cost** — per-user billing costs one request per user per day. `MAX_BILLING_USERS` and
+  `RELOAD_TRAILING_DAYS` control the volume; the practical ceiling is around 7,500 seats. See
+  [Supported scale](docs/architecture.md#supported-scale).
 - **Retention** — the raw zone tiers to cool at 90 days and archive at 365; it never auto-deletes.
 - **Schedule** — `azd env set INGESTION_SCHEDULE "0 0 */6 * * *"` for a 6-hourly pull.
 

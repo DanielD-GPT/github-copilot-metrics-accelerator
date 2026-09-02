@@ -128,22 +128,15 @@ def _pull_billing(client, lake, settings, org: str, seat_rows, since: date, unti
         )
         logins = logins[: settings.max_billing_users]
 
-    periods: list[tuple[date, int | None]] = (
-        [(d, d.day) for d in _daterange(since, until)]
-        if settings.billing_granularity == "day"
-        else [(date(y, m, 1), None) for y, m in _months_in_range(since, until)]
-    )
-
-    LOGGER.info("Billing pull for %s: %s users x %s periods.", org, len(logins), len(periods))
+    days = list(_daterange(since, until))
+    LOGGER.info("Billing pull for %s: %s users x %s days.", org, len(logins), len(days))
 
     rows: list[dict] = []
     raw: list[dict] = []
 
     for login in logins:
-        for period_date, day_part in periods:
-            payload = client.premium_request_usage(
-                org, login, period_date.year, period_date.month, day_part
-            )
+        for day in days:
+            payload = client.premium_request_usage(org, login, day.year, day.month, day.day)
             if not payload:
                 continue
 
@@ -152,25 +145,15 @@ def _pull_billing(client, lake, settings, org: str, seat_rows, since: date, unti
             raw.append(
                 {
                     "user_login": login,
-                    "period": period_date.isoformat(),
-                    "granularity": settings.billing_granularity,
+                    "period": day.isoformat(),
                     "payload": payload,
                 }
             )
-            rows.extend(flatten_premium_requests(payload, org, login, period_date))
+            rows.extend(flatten_premium_requests(payload, org, login, day))
 
     if raw:
         lake.write("premium_requests", until, raw, suffix=org)
     return rows
-
-
-def _months_in_range(since: date, until: date) -> list[tuple[int, int]]:
-    months: list[tuple[int, int]] = []
-    cursor = date(since.year, since.month, 1)
-    while cursor <= until:
-        months.append((cursor.year, cursor.month))
-        cursor = date(cursor.year + (cursor.month // 12), (cursor.month % 12) + 1, 1)
-    return months
 
 
 @app.function_name(name="ingest_daily")

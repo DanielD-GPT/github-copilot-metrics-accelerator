@@ -26,9 +26,8 @@ class Settings:
     metrics_scope: str = "enterprise"
     billing_scope: str = "organization"
 
-    # Per-user billing needs one request per user per period, so period length is
-    # the main cost lever. 'day' is accurate; 'month' is far cheaper.
-    billing_granularity: str = "day"
+    # Per-user billing needs one request per user per day, so seat count and the
+    # reload window together set the request volume. See docs/architecture.md.
     max_billing_users: int = 2000
 
     key_vault_name: str = ""
@@ -67,8 +66,6 @@ class Settings:
             problems.append("Set GITHUB_ENTERPRISE or GITHUB_ORGS.")
         if self.metrics_scope not in ("enterprise", "organization"):
             problems.append("METRICS_SCOPE must be 'enterprise' or 'organization'.")
-        if self.billing_granularity not in ("day", "month"):
-            problems.append("BILLING_GRANULARITY must be 'day' or 'month'.")
         if not self.use_enterprise_metrics and not self.github_orgs:
             problems.append("Organization-scope metrics require GITHUB_ORGS.")
         if not self.github_orgs:
@@ -90,7 +87,6 @@ def load_settings() -> Settings:
         github_orgs=_split_csv(os.environ.get("GITHUB_ORGS", "")),
         metrics_scope=os.environ.get("METRICS_SCOPE", "enterprise").strip().lower(),
         billing_scope=os.environ.get("BILLING_SCOPE", "organization").strip().lower(),
-        billing_granularity=os.environ.get("BILLING_GRANULARITY", "day").strip().lower(),
         max_billing_users=int(os.environ.get("MAX_BILLING_USERS", "2000")),
         key_vault_name=os.environ.get("KEY_VAULT_NAME", ""),
         github_credential_secret_name=os.environ.get("GITHUB_CREDENTIAL_SECRET_NAME", "github-credential"),

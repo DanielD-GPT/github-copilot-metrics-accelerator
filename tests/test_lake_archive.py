@@ -71,7 +71,6 @@ def _settings(**overrides):
         "key_vault_name": "kv",
         "sql_connection_string": "Driver=...",
         "lake_account_name": "lake",
-        "billing_granularity": "day",
         "max_billing_users": 100,
     }
     base.update(overrides)

@@ -167,10 +167,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: 'organization'
         }
         {
-          name: 'BILLING_GRANULARITY'
-          value: 'day'
-        }
-        {
           name: 'MAX_BILLING_USERS'
           value: '2000'
         }

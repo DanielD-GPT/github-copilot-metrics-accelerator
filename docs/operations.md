@@ -99,7 +99,7 @@ Because every payload is archived, you can rebuild the warehouse without calling
 | `WARNING: seats present but no billing rows` | Seats resolved but no spend returned | May be legitimate (no premium requests), or premium request permission is missing |
 | `200 OK but no download_links` | Report not generated for that day, or policy disabled | Try an earlier `--day`; confirm *Copilot usage metrics* is *Enabled everywhere* |
 | Report download 403 | Signed URL expired or an auth header was sent | Links are short-lived; re-resolve them rather than caching |
-| 403 with `X-RateLimit-Remaining: 0` | Billing fan-out exhausted the hourly limit | Set `BILLING_GRANULARITY=month`, lower `MAX_BILLING_USERS`, or use a GitHub App |
+| 403 with `X-RateLimit-Remaining: 0` | Billing fan-out exhausted the hourly limit | Lower `MAX_BILLING_USERS` or `RELOAD_TRAILING_DAYS`, or authenticate with a GitHub App for a higher limit |
 | Run exceeds 30 minutes | Too many users × days | Reduce `RELOAD_TRAILING_DAYS` or switch to monthly billing |
 | All spend shows one editor | User genuinely used one IDE, or `weight_basis = equal_split` | Check `fact_user_ide_share.weight_basis` |
 | Team totals look low | GitHub omits teams under 5 seated users | Expected; use `vw_spend_by_user_model` for complete totals |

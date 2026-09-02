@@ -36,10 +36,6 @@ class TestValidate:
         with pytest.raises(ValueError, match="GITHUB_ORGS"):
             self._valid(github_orgs=[], github_enterprise="ent").validate()
 
-    def test_rejects_unknown_billing_granularity(self):
-        with pytest.raises(ValueError, match="BILLING_GRANULARITY"):
-            self._valid(billing_granularity="hourly").validate()
-
     def test_rejects_unknown_metrics_scope(self):
         with pytest.raises(ValueError, match="METRICS_SCOPE"):
             self._valid(metrics_scope="galaxy").validate()

@@ -79,14 +79,28 @@ model, weighted by interactions.
 
 ## Cost of the billing fan-out
 
-The billing API attributes spend only when filtered per user, so request volume is
-`users × periods`. A 500-seat org over a 7-day window is ~3,500 requests per run.
+The billing API attributes spend only when filtered by user, so request volume is
+`users × days`. There is no cheaper path: `premium_request/usage` returns `model` but no date,
+while `/settings/billing/usage` returns a date but neither user nor model. Full grain requires
+one call per user per day.
 
-| Setting | Effect |
+### Supported scale
+
+Two ceilings apply: GitHub's rate limit and the Function's 30-minute timeout.
+
+| Factor | Value |
 |---|---|
-| `BILLING_GRANULARITY=day` | Accurate daily spend; highest request volume |
-| `BILLING_GRANULARITY=month` | ~30× fewer requests; spend lands on the first of the month |
-| `MAX_BILLING_USERS` | Hard cap per org; logs a warning when it truncates |
+| GitHub App rate limit | ~15,000 requests/hour |
+| Requests achievable in one 30-minute run | ~7,500 |
+| Users supported at `RELOAD_TRAILING_DAYS=7` | **~1,000** |
+| Users supported at `RELOAD_TRAILING_DAYS=1` | **~7,500** |
+
+`MAX_BILLING_USERS` caps the fan-out per org and logs a warning when it truncates, so an
+oversized tenant degrades visibly rather than silently timing out.
+
+Beyond roughly 7,500 seats this design needs a queue-based fan-out across multiple Function
+invocations, or month-grain billing with a matching month-grain allocation bridge. Neither is
+implemented.
 
 ## Failing loudly
 
@@ -138,7 +152,7 @@ document, not one to arrive at by accident because the dashboard made it easy.
 
 ## Scaling notes
 
-- Metrics volume scales with orgs × days; billing scales with users × periods. Billing dominates.
+- Metrics volume scales with orgs × days; billing scales with users × days. Billing dominates.
 - The 30-minute `functionTimeout` bounds a single run. Large tenants should reduce
-  `RELOAD_TRAILING_DAYS`, switch to monthly billing granularity, or split per-org onto a queue.
+  `RELOAD_TRAILING_DAYS` or lower `MAX_BILLING_USERS`; see [Supported scale](#supported-scale).
 - All datasets accumulate in memory before the load. Very large tenants should stream per-org.

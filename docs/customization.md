@@ -51,13 +51,19 @@ assumption rather than observation.
 
 ## Billing request volume
 
-Per-user spend requires one request per user per period.
+Per-user spend requires one request per user per day. Two levers control the volume:
 
 ```bash
-azd env set BILLING_GRANULARITY "month"   # ~30x fewer requests, monthly precision
 azd env set MAX_BILLING_USERS   "500"     # hard cap per org
 azd env set RELOAD_TRAILING_DAYS "3"      # narrower correction window
 ```
+
+The practical ceiling is roughly 1,000 users at a 7-day reload window, or 7,500 at a 1-day
+window. See [Supported scale](architecture.md#supported-scale).
+
+Month-grain billing would cut request volume substantially, but it is **not implemented**: a
+month of spend needs a month-grain allocation bridge to attribute correctly, and mixing grains
+in one fact table double-counts.
 
 ## Ingestion schedule
 
