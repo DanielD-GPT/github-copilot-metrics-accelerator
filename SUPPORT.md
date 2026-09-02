@@ -30,7 +30,7 @@ signatures to fixes.
 | `Login failed for user` | `sql/05_grants.sql` was not run |
 | Error 51002 | Extract returned nothing — run the validation script |
 | Error 51005 | Copilot seats came back empty; spend cannot be attributed |
-| Error 51004 | An ingestion run is already in progress |
+| HTTP 409 from backfill | An ingestion run is already in progress |
 | Reports show no rows | Row-level security was enabled without granting access in `dbo.report_access` |
 
 ## Filing an issue

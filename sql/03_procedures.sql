@@ -517,17 +517,26 @@ GO
 /*
     Ingestion runs share staging tables, so two concurrent runs would corrupt each
     other. sp_getapplock makes the check-and-claim atomic across Function instances.
+
+    Contention is reported through @status ('started' or 'locked') rather than THROW.
+    Raising for an expected condition forced the caller to parse driver error text,
+    which is locale-dependent and breaks when SQL Server reports a different error
+    first (for example trancount mismatch after a rollback inside a nested transaction).
 */
 CREATE OR ALTER PROCEDURE dbo.sp_begin_run
     @trigger_source VARCHAR(30),
     @since DATE,
     @until DATE,
     @stale_after_minutes INT = 120,
-    @run_id BIGINT OUTPUT
+    @run_id BIGINT OUTPUT,
+    @status VARCHAR(20) OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
+
+    SET @run_id = NULL;
+    SET @status = 'locked';
 
     BEGIN TRANSACTION;
 
@@ -541,7 +550,7 @@ BEGIN
     IF @lock < 0
     BEGIN
         ROLLBACK TRANSACTION;
-        THROW 51003, 'Could not acquire the ingestion lock; another run is starting.', 1;
+        RETURN;
     END
 
     -- A crashed run leaves its row 'running' forever; retire it after the threshold.
@@ -555,13 +564,14 @@ BEGIN
     IF EXISTS (SELECT 1 FROM dbo.ingestion_run WHERE status = 'running')
     BEGIN
         ROLLBACK TRANSACTION;
-        THROW 51004, 'An ingestion run is already in progress.', 1;
+        RETURN;
     END
 
     INSERT INTO dbo.ingestion_run (since_date, until_date, trigger_source, status)
     VALUES (@since, @until, @trigger_source, 'running');
 
     SET @run_id = SCOPE_IDENTITY();
+    SET @status = 'started';
 
     COMMIT TRANSACTION;
 END;

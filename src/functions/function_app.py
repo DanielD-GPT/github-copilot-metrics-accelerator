@@ -38,6 +38,11 @@ LOGGER = logging.getLogger(__name__)
 class SeatsUnavailable(RuntimeError):
     """An org returned no Copilot seats, so its spend cannot be attributed."""
 
+
+def _safe_error(exc: Exception) -> str:
+    """Driver errors embed server and connection detail; keep that out of the database."""
+    return f"{type(exc).__name__} - see Application Insights for detail"
+
 DATASET_KEYS = (
     "user_day",
     "user_ide",
@@ -96,7 +101,7 @@ def run_ingestion(since: date, until: date, trigger_source: str = "timer") -> di
 
         counts = loader.load(datasets, strict=settings.fail_on_empty_report)
     except Exception as exc:
-        loader.complete_run(run_id, "failed", {}, str(exc))
+        loader.complete_run(run_id, "failed", {}, _safe_error(exc))
         raise
 
     loader.complete_run(run_id, "succeeded", counts)

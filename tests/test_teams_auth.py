@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("azure.functions")
 pytest.importorskip("azure.keyvault.secrets")
 
-from teams import MENTION_TAG, _verify_signature  # noqa: E402
+from teams import MENTION_TAG, _looks_like_hmac_header, _money, _verify_signature  # noqa: E402
 
 SECRET = base64.b64encode(b"a-shared-secret-from-teams").decode()
 
@@ -63,3 +63,28 @@ class TestMentionStripping:
     def test_removes_multiple_mentions(self):
         text = "<at>Bot</at> team <at>Other</at> Platform"
         assert MENTION_TAG.sub("", text).split() == ["team", "Platform"]
+
+
+class TestHeaderPreCheck:
+    """Cheap shape check so unsigned traffic never reaches Key Vault."""
+
+    def test_accepts_a_well_formed_header(self):
+        assert _looks_like_hmac_header("HMAC abc123") is True
+
+    def test_rejects_missing_or_empty(self):
+        assert _looks_like_hmac_header("") is False
+        assert _looks_like_hmac_header("HMAC ") is False
+        assert _looks_like_hmac_header("HMAC") is False
+
+    def test_rejects_other_schemes(self):
+        assert _looks_like_hmac_header("Bearer abc123") is False
+
+
+class TestMoneyFormatting:
+    def test_formats_numbers(self):
+        assert _money(1234.5) == "$1,234.50"
+        assert _money(None) == "$0.00"
+
+    def test_survives_unexpected_types(self):
+        assert _money("not a number") == "$0.00"
+        assert _money(object()) == "$0.00"

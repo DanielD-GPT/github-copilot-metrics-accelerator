@@ -139,10 +139,10 @@ class SqlLoader:
         self._connection_string = settings.sql_connection_string
         self._fast_executemany = settings.sql_fast_executemany
 
-    def _connect(self) -> pyodbc.Connection:
+    def _connect(self, autocommit: bool = False) -> pyodbc.Connection:
         # Serverless SQL may be paused; the driver retries while it resumes.
         connection = pyodbc.connect(self._connection_string, timeout=60)
-        connection.autocommit = False
+        connection.autocommit = autocommit
         return connection
 
     def _bulk_insert(
@@ -209,28 +209,29 @@ class SqlLoader:
 
     def begin_run(self, since, until, trigger_source: str) -> int:
         """Claim the ingestion lock. Raises RunInProgress if another run holds it."""
-        connection = self._connect()
+        # autocommit: the procedure manages its own transaction. An outer transaction
+        # would turn its ROLLBACK into a trancount mismatch.
+        connection = self._connect(autocommit=True)
         try:
             cursor = connection.cursor()
             cursor.execute(
                 """
-                DECLARE @run_id BIGINT;
-                EXEC dbo.sp_begin_run ?, ?, ?, 120, @run_id OUTPUT;
-                SELECT @run_id AS run_id;
+                DECLARE @run_id BIGINT, @status VARCHAR(20);
+                EXEC dbo.sp_begin_run ?, ?, ?, 120, @run_id OUTPUT, @status OUTPUT;
+                SELECT @run_id AS run_id, @status AS status;
                 """,
                 trigger_source,
                 since,
                 until,
             )
             row = cursor.fetchone()
-            connection.commit()
-            return int(row[0])
-        except pyodbc.Error as exc:
-            connection.rollback()
-            text = str(exc)
-            if "51003" in text or "51004" in text or "already in progress" in text:
-                raise RunInProgress("An ingestion run is already in progress.") from exc
-            raise
+
+            if row is None:
+                raise RuntimeError("sp_begin_run returned no result set.")
+            if row.status != "started" or row.run_id is None:
+                raise RunInProgress("An ingestion run is already in progress.")
+
+            return int(row.run_id)
         finally:
             connection.close()
 
@@ -242,10 +243,9 @@ class SqlLoader:
         message: str | None = None,
     ) -> None:
         counts = counts or {}
-        connection = self._connect()
+        connection = self._connect(autocommit=True)
         try:
-            cursor = connection.cursor()
-            cursor.execute(
+            connection.cursor().execute(
                 "{CALL dbo.sp_complete_run (?, ?, ?, ?, ?, ?, ?, ?)}",
                 run_id,
                 status,
@@ -256,9 +256,7 @@ class SqlLoader:
                 counts.get("seats", 0),
                 (message or "")[:2000],
             )
-            connection.commit()
         except Exception:
-            connection.rollback()
             LOGGER.exception("Could not close out ingestion_run %s.", run_id)
         finally:
             connection.close()

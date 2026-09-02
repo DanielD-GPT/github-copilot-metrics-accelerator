@@ -141,6 +141,45 @@ class TestPullBillingArchive:
         assert len(client.calls) == 6
 
 
+class TestPathSanitization:
+    """Org and dataset names become blob path segments."""
+
+    def test_strips_traversal_characters(self):
+        from shared.lake import _safe_segment
+
+        for hostile in ("../../etc/passwd", "org/with/slashes", "org\\with\\backslashes", ".."):
+            result = _safe_segment(hostile)
+            assert "/" not in result
+            assert "\\" not in result
+            assert not result.startswith(".")
+
+    def test_preserves_ordinary_names(self):
+        from shared.lake import _safe_segment
+
+        assert _safe_segment("acme-corp") == "acme-corp"
+        assert _safe_segment("users_1_day") == "users_1_day"
+
+    def test_never_returns_empty(self):
+        from shared.lake import _safe_segment
+
+        for value in ("", "...", "///"):
+            assert _safe_segment(value)
+
+
+class TestSafeErrorText:
+    def test_omits_driver_detail(self):
+        from function_app import _safe_error
+
+        exc = RuntimeError(
+            "[08001] Server=tcp:sql-abc.database.windows.net;Pwd=hunter2;Login failed"
+        )
+        message = _safe_error(exc)
+
+        assert "RuntimeError" in message
+        assert "hunter2" not in message
+        assert "database.windows.net" not in message
+
+
 class TestSeatsGuard:
     """No seats means no billing fan-out, which would look like zero spend."""
 

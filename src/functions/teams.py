@@ -14,6 +14,7 @@ Commands (after the @mention):
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -36,12 +37,12 @@ MENTION_TAG = re.compile(r"<at>.*?</at>", re.IGNORECASE)
 
 def _verify_signature(raw_body: bytes, auth_header: str, shared_secret: str) -> bool:
     """Teams signs the raw body with HMAC-SHA256 using the base64-decoded secret."""
-    if not auth_header or not auth_header.startswith("HMAC "):
+    if not _looks_like_hmac_header(auth_header):
         return False
 
     try:
-        key = base64.b64decode(shared_secret)
-    except Exception:
+        key = base64.b64decode(shared_secret, validate=True)
+    except (binascii.Error, ValueError):
         LOGGER.error("Teams webhook secret is not valid base64.")
         return False
 
@@ -50,6 +51,13 @@ def _verify_signature(raw_body: bytes, auth_header: str, shared_secret: str) -> 
 
     # Constant-time comparison: never use == on a signature.
     return hmac.compare_digest(expected, provided)
+
+
+def _looks_like_hmac_header(auth_header: str) -> bool:
+    """Cheap shape check so unauthenticated traffic never reaches Key Vault."""
+    if not auth_header or not auth_header.startswith("HMAC "):
+        return False
+    return bool(auth_header[len("HMAC "):].strip())
 
 
 def _card(title: str, facts: list[tuple[str, str]], note: str | None = None) -> dict:
@@ -96,7 +104,10 @@ def _text(message: str) -> dict:
 
 
 def _money(value) -> str:
-    return f"${float(value or 0):,.2f}"
+    try:
+        return f"${float(value or 0):,.2f}"
+    except (TypeError, ValueError):
+        return "$0.00"
 
 
 HELP = (
@@ -186,6 +197,11 @@ def teams_bot(req: func.HttpRequest) -> func.HttpResponse:
     """Anonymous at the platform level; authenticated by Teams' HMAC signature."""
     settings = load_settings()
     raw_body = req.get_body()
+    auth_header = req.headers.get("Authorization", "")
+
+    # Reject obviously unsigned traffic before spending a Key Vault call on it.
+    if not _looks_like_hmac_header(auth_header):
+        return func.HttpResponse("Unauthorized", status_code=401)
 
     try:
         shared_secret = get_secret(settings, SECRET_NAME)
@@ -193,9 +209,7 @@ def teams_bot(req: func.HttpRequest) -> func.HttpResponse:
         LOGGER.exception("Could not read the Teams webhook secret.")
         return func.HttpResponse("Bot not configured.", status_code=503)
 
-    if not shared_secret or not _verify_signature(
-        raw_body, req.headers.get("Authorization", ""), shared_secret
-    ):
+    if not shared_secret or not _verify_signature(raw_body, auth_header, shared_secret):
         LOGGER.warning("Rejected Teams webhook call with an invalid signature.")
         return func.HttpResponse("Unauthorized", status_code=401)
 

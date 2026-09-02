@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -18,6 +19,13 @@ from azure.storage.filedatalake import DataLakeServiceClient
 from .config import Settings
 
 LOGGER = logging.getLogger(__name__)
+
+_UNSAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _safe_segment(value: str) -> str:
+    """Keep org and dataset names from escaping their partition directory."""
+    return _UNSAFE_SEGMENT.sub("_", value).strip(".") or "unnamed"
 
 
 def _json_default(value: Any) -> str:
@@ -43,6 +51,9 @@ class RawZone:
             pass
 
     def write(self, dataset: str, partition_date: date, payload: Any, suffix: str = "") -> str:
+        dataset = _safe_segment(dataset)
+        suffix = _safe_segment(suffix) if suffix else ""
+
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         name = f"{dataset}{('_' + suffix) if suffix else ''}_{stamp}.json"
         path = f"{dataset}/dt={partition_date.isoformat()}/{name}"
