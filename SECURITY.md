@@ -15,7 +15,7 @@ This accelerator is designed to hold no secrets in source control:
 | Control | Implementation |
 |---|---|
 | GitHub credential | Stored in Azure Key Vault, read at runtime by managed identity |
-| Azure SQL | Entra-only authentication; no SQL login or password exists in the templates |
+| Fabric Warehouse | Function uses its system-assigned managed identity; no SQL password exists |
 | Storage | Shared key access disabled, public blob access disabled, TLS 1.2 minimum |
 | Function to Azure | System-assigned managed identity with least-privilege RBAC |
 | API errors | Generic messages to callers; detail goes to Application Insights only |
@@ -29,9 +29,8 @@ These are **documented gaps**, not oversights. Review them before production use
    spend through the REST API, and any member of the Teams channel can query any user. Add API
    Management, IP restrictions, or caller-identity checks before exposing this broadly.
 
-2. **Public network access is enabled** on SQL, Storage, and Key Vault so a first deployment
-   succeeds without network plumbing. For production, add Private Endpoints and set
-   `defaultAction: 'Deny'`.
+2. **Public network access is enabled** on Storage and Key Vault so a first deployment succeeds
+   without network plumbing. Fabric Warehouse requires outbound TDS access on TCP 1433.
 
 3. **The Teams route is anonymous at the platform level.** Teams cannot send a function key, so
    authentication is the HMAC signature alone. Requests with an invalid signature are rejected
@@ -39,7 +38,7 @@ These are **documented gaps**, not oversights. Review them before production use
 
 4. **Function keys do not rotate automatically.** Rotate them on your own schedule.
 
-5. **Row-level security is off by default.** Anyone with database read access sees every
+5. **Row-level security is off by default.** Anyone with Warehouse read access sees every
    developer's activity and spend. Enabling RLS is a single statement; see
    [Handling personal data](#handling-personal-data).
 

@@ -28,9 +28,9 @@ finer grain than the native GitHub reports, e.g.:
 |---|---|---|
 | Azure Function App | Python 3.11, **Flex Consumption (FC1)** | Timer-triggered daily pull + HTTP backfill; handles pagination, 202 polling, retries |
 | Azure Data Lake Storage Gen2 | Standard_LRS, HNS enabled | Immutable raw zone `dt=YYYY-MM-DD`; replay source because GitHub only retains 28 days |
-| Azure SQL Database | **GP_S_Gen5** serverless, auto-pause | Star schema + allocation logic in T-SQL |
+| Microsoft Fabric Warehouse | Existing capacity-backed Warehouse | Star schema + allocation logic in T-SQL |
 | Azure Key Vault | Standard, RBAC | GitHub App private key / PAT |
-| Managed Identity | System-assigned on Function | Passwordless → Key Vault, Storage, SQL |
+| Managed Identity | System-assigned on Function | Passwordless → Key Vault, Storage, Fabric Warehouse |
 | App Insights + Log Analytics | Pay-as-you-go | Ingestion telemetry and failure alerts |
 
 ## 4. Data model (star schema)
@@ -54,7 +54,7 @@ only the editor/surface split is modeled.
 
 ## 6. Security decisions
 
-- Entra-only auth on Azure SQL (`azureADOnlyAuthentication: true`) — no SQL logins, no passwords in Bicep.
+- Managed-identity authentication to Fabric Warehouse — no SQL logins or passwords in Bicep.
 - Storage: `allowSharedKeyAccess: false`, `allowBlobPublicAccess: false`, TLS 1.2 minimum.
 - Key Vault: RBAC authorization, soft-delete + purge protection.
 - Function → all resources via system-assigned managed identity and RBAC role assignments.
@@ -75,10 +75,10 @@ only the editor/surface split is modeled.
 
 1. `azd auth login`
 2. `azd env new <env>` and set `GITHUB_ENTERPRISE`, `GITHUB_ORGS`
-3. Set `AZURE_PRINCIPAL_ID` / `AZURE_PRINCIPAL_NAME` (Entra admin for SQL)
+3. Set the Fabric workspace ID, Warehouse SQL endpoint, and Warehouse name
 4. `azd up`
 5. Store GitHub credential in Key Vault
-6. Apply `sql/*.sql` in order
+6. The postprovision hook grants Fabric access and applies `sql/*.sql` in order
 7. Trigger backfill endpoint to seed history
 
 ---

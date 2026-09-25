@@ -16,7 +16,8 @@
 
     "LAKE_ACCOUNT_NAME": "<your-lake-account>",
     "LAKE_FILESYSTEM_NAME": "raw",
-    "SQL_CONNECTION_STRING": "Driver={ODBC Driver 18 for SQL Server};Server=tcp:<server>.database.windows.net,1433;Database=copilotmetrics;Authentication=ActiveDirectoryDefault;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60;",
+    "FABRIC_WORKSPACE_ID": "<fabric-workspace-id>",
+    "FABRIC_WAREHOUSE_CONNECTION_STRING": "Driver={ODBC Driver 18 for SQL Server};Server=<warehouse-id>.datawarehouse.fabric.microsoft.com,1433;Database=copilotmetrics;Authentication=ActiveDirectoryDefault;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60;",
     "SQL_FAST_EXECUTEMANY": "true",
 
     "INGESTION_SCHEDULE": "0 0 2 * * *",

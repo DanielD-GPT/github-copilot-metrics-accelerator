@@ -19,7 +19,7 @@ def _client(**overrides):
     base = {
         "github_orgs": ["acme"],
         "key_vault_name": "kv",
-        "sql_connection_string": "Driver=...",
+        "fabric_warehouse_connection_string": "Driver=...",
         "lake_account_name": "lake",
     }
     base.update(overrides)
@@ -216,7 +216,7 @@ class TestBackfillWindow:
         with pytest.raises(ValueError, match="MAX_BACKFILL_DAYS"):
             Settings(
                 github_orgs=["acme"], key_vault_name="kv",
-                sql_connection_string="x", lake_account_name="lake",
+                fabric_warehouse_connection_string="x", lake_account_name="lake",
                 max_backfill_days=0,
             ).validate()
 
@@ -224,7 +224,7 @@ class TestBackfillWindow:
         with pytest.raises(ValueError, match="REPORT_HOST_ALLOWLIST"):
             Settings(
                 github_orgs=["acme"], key_vault_name="kv",
-                sql_connection_string="x", lake_account_name="lake",
+                fabric_warehouse_connection_string="x", lake_account_name="lake",
                 report_host_allowlist=(),
             ).validate()
 

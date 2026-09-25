@@ -79,7 +79,8 @@ The schedule is an NCRONTAB expression in UTC: `{second} {minute} {hour} {day} {
 
 1. Add a fetch method to `GitHubClient` in `src/functions/shared/github_client.py`.
 2. Add a flattener in `shared/transform.py`.
-3. Add a staging table in `sql/02_staging.sql` and register it in `STAGING_TABLES` in `sql_loader.py`.
+3. Add a staging table in `sql/02_staging.sql` and register it in `STAGING_TABLES` in
+   `warehouse_loader.py`.
 4. Add a MERGE procedure and call it from `dbo.sp_load_all`.
 5. Extend `sp_reconcile_load` so the new source fails loudly when it drops rows.
 6. Archive the raw payload with `lake.write(...)` before parsing — always.
@@ -95,13 +96,10 @@ delete: {
 }
 ```
 
-## Scaling the database
+## Scaling the Warehouse
 
-```bicep
-// infra/core/sql.bicep
-param maxCapacity int = 8       // more vCores
-param autoPauseDelay int = -1   // never pause (higher cost, no cold start)
-```
+Fabric Warehouse compute is governed by the capacity assigned to its workspace. Resize the Fabric
+capacity or move the workspace to a different capacity; there is no per-Warehouse Bicep SKU.
 
 ## Restricting the backfill endpoint
 

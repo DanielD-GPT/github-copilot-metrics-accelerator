@@ -2,13 +2,14 @@
 // Paste each block into Power BI Desktop: Home > Transform data > New Source > Blank Query,
 // then Advanced Editor. Set SERVER and DATABASE once in the parameters below.
 //
-// Use DirectQuery to keep the serverless SQL tier cheap, or Import with a scheduled
-// refresh after 03:00 UTC (the ingestion timer runs at 02:00 UTC).
+// Use DirectQuery for always-current data, or Import with a scheduled refresh after
+// 03:00 UTC (the ingestion timer runs at 02:00 UTC). Both read the Fabric Warehouse
+// SQL endpoint and consume Fabric capacity units when they query.
 
 // ---------------------------------------------------------------- parameters
 // Create these two as Text parameters named exactly SqlServer and SqlDatabase.
-// SqlServer   e.g. sql-abc123.database.windows.net
-// SqlDatabase e.g. copilotmetrics
+// SqlServer   = FABRIC_SQL_ENDPOINT,   e.g. abc123.datawarehouse.fabric.microsoft.com
+// SqlDatabase = FABRIC_WAREHOUSE_NAME, e.g. copilotmetrics
 
 // ------------------------------------------------------- Spend (allocated)
 let

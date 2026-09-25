@@ -17,8 +17,8 @@ from teams import bp as teams_bp
 
 from shared.config import load_settings
 from shared.github_client import GitHubClient
+from shared.ingestion_lock import IngestionLease, RunInProgress
 from shared.lake import RawZone
-from shared.sql_loader import RunInProgress, SqlLoader
 from shared.transform import (
     flatten_premium_requests,
     flatten_seats,
@@ -27,6 +27,7 @@ from shared.transform import (
     flatten_user_model_feature,
     flatten_user_teams,
 )
+from shared.warehouse_loader import WarehouseLoader
 
 app = func.FunctionApp()
 app.register_blueprint(api_bp)
@@ -66,45 +67,54 @@ def run_ingestion(since: date, until: date, trigger_source: str = "timer") -> di
 
     client = GitHubClient(settings)
     lake = RawZone(settings)
-    loader = SqlLoader(settings)
+    loader = WarehouseLoader(settings)
 
-    # Claim the lock before any extraction so a concurrent run fails fast and cheap.
-    run_id = loader.begin_run(since, until, trigger_source)
+    # Fabric Warehouse does not expose SQL Server's sp_getapplock. A renewable blob
+    # lease keeps the shared staging tables single-writer across Function instances.
+    with IngestionLease(settings) as lease:
+        run_id = loader.begin_run(since, until, trigger_source)
+        datasets: dict[str, list[dict]] = {key: [] for key in DATASET_KEYS}
 
-    datasets: dict[str, list[dict]] = {key: [] for key in DATASET_KEYS}
+        try:
+            # Metrics and billing are both pulled per organization: the billing endpoint is
+            # org-scoped, and org scope is what gives each metrics record a usable org login.
+            for org in settings.github_orgs:
+                seats = client.copilot_seats(org)
+                lake.write("seats", until, seats, suffix=org)
+                seat_rows = flatten_seats(seats, org)
+                datasets["seats"].extend(seat_rows)
 
-    try:
-        # Metrics and billing are both pulled per organization: the billing endpoint is
-        # org-scoped, and org scope is what gives each metrics record a usable org login.
-        for org in settings.github_orgs:
-            seats = client.copilot_seats(org)
-            lake.write("seats", until, seats, suffix=org)
-            seat_rows = flatten_seats(seats, org)
-            datasets["seats"].extend(seat_rows)
+                for day in _daterange(since, until):
+                    users = client.user_metrics(day, org)
+                    if users:
+                        lake.write("users_1_day", day, users, suffix=org)
+                        datasets["user_day"].extend(flatten_user_day(users, org))
+                        datasets["user_ide"].extend(flatten_user_ide(users, org))
+                        datasets["user_model_feature"].extend(
+                            flatten_user_model_feature(users, org)
+                        )
 
-            for day in _daterange(since, until):
-                users = client.user_metrics(day, org)
-                if users:
-                    lake.write("users_1_day", day, users, suffix=org)
-                    datasets["user_day"].extend(flatten_user_day(users, org))
-                    datasets["user_ide"].extend(flatten_user_ide(users, org))
-                    datasets["user_model_feature"].extend(flatten_user_model_feature(users, org))
+                    teams = client.user_teams(day, org)
+                    if teams:
+                        lake.write("user_teams_1_day", day, teams, suffix=org)
+                        datasets["user_teams"].extend(flatten_user_teams(teams, org))
 
-                teams = client.user_teams(day, org)
-                if teams:
-                    lake.write("user_teams_1_day", day, teams, suffix=org)
-                    datasets["user_teams"].extend(flatten_user_teams(teams, org))
+                datasets["premium_requests"].extend(
+                    _pull_billing(client, lake, settings, org, seat_rows, since, until)
+                )
 
-            datasets["premium_requests"].extend(
-                _pull_billing(client, lake, settings, org, seat_rows, since, until)
+            lease.ensure_healthy()
+            counts = loader.load(
+                datasets,
+                strict=settings.fail_on_empty_report,
+                health_check=lease.ensure_healthy,
             )
+            lease.ensure_healthy()
+        except Exception as exc:
+            loader.complete_run(run_id, "failed", {}, _safe_error(exc))
+            raise
 
-        counts = loader.load(datasets, strict=settings.fail_on_empty_report)
-    except Exception as exc:
-        loader.complete_run(run_id, "failed", {}, _safe_error(exc))
-        raise
-
-    loader.complete_run(run_id, "succeeded", counts)
+        loader.complete_run(run_id, "succeeded", counts)
     LOGGER.info("Ingestion complete for %s..%s: %s", since, until, counts)
     return counts
 

@@ -24,7 +24,7 @@ traces
 SELECT TOP 5 run_id, completed_at, since_date, until_date, trigger_source, status,
        rows_user_day, rows_user_ide, rows_premium_requests, message
 FROM dbo.ingestion_run
-ORDER BY run_id DESC;
+ORDER BY started_at DESC;
 ```
 
 ```sql
@@ -94,7 +94,7 @@ Because every payload is archived, you can rebuild the warehouse without calling
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Login failed for user '<token-identified principal>'` | Managed identity has no database user | Run `sql/05_grants.sql` with the Function App name |
+| `Login failed for user '<token-identified principal>'` | Managed identity lacks Fabric item/workspace Read | Grant workspace Viewer access, then run `sql/05_grants.sql` with the Function App name |
 | Error 51001 on load | Billing rows could not map to dimensions | Inspect `stg.premium_requests` for blank `product` or `org_login` |
 | Error 51002 on load | Extract returned nothing at all | Run `scripts/validate_github_api.py`; check the metrics policy is enabled |
 | Error 51005 on load | Activity staged but zero Copilot seats | Seats call failed — token needs `read:org` and billing manager. Without seats no spend can be attributed |
@@ -110,8 +110,8 @@ Because every payload is archived, you can rebuild the warehouse without calling
 | All spend shows one editor | User genuinely used one IDE, or `weight_basis = equal_split` | Check `fact_user_ide_share.weight_basis` |
 | Team totals look low | GitHub omits teams under 5 seated users | Expected; use `vw_spend_by_user_model` for complete totals |
 | `Data source name not found` | ODBC driver missing locally | Install ODBC Driver 18; it is preinstalled on the Functions Linux image |
-| Money values look rounded or truncated | Driver mishandling bulk parameter binding | Parameter types are pinned in `sql_loader.COLUMN_TYPES`; set `SQL_FAST_EXECUTEMANY=false` to fall back to row-by-row binding and compare |
-| SQL connection times out on first call | Serverless database resuming | Connection timeout is 60s; retry succeeds |
+| Money values look rounded or truncated | Driver mishandling bulk parameter binding | Parameter types are pinned in `warehouse_loader.COLUMN_TYPES`; set `SQL_FAST_EXECUTEMANY=false` to fall back to row-by-row binding and compare |
+| Warehouse connection fails | Fabric capacity is paused, TCP 1433 is blocked, or identity initialization is incomplete | Resume capacity, allow outbound TDS, and call a Fabric REST API with the workload identity |
 
 ## Cost control
 
@@ -120,13 +120,16 @@ Because every payload is archived, you can rebuild the warehouse without calling
 az functionapp stop -g "$(azd env get-value AZURE_RESOURCE_GROUP)" -n "$(azd env get-value FUNCTION_APP_NAME)"
 ```
 
-The SQL database auto-pauses after 60 minutes idle. Frequent Power BI DirectQuery traffic keeps it
-awake — switch to Import mode if the compute bill climbs.
+Warehouse cost is charged to the Fabric capacity assigned to the workspace. Pause or resize that
+capacity according to your broader Fabric workload requirements.
 
 ## Teardown
 
 ```bash
 azd down --purge
 ```
+
+`azd down` removes Azure resources only. It does not delete the Fabric Warehouse, workspace, or
+capacity.
 
 `--purge` is required because Key Vault has purge protection enabled.

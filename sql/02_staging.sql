@@ -21,13 +21,13 @@ CREATE TABLE stg.user_day (
     used_copilot_cloud_agent       BIT           NULL,
     used_code_review_active        BIT           NULL,
     used_code_review_passive       BIT           NULL,
-    user_initiated_interaction_count INT         NOT NULL DEFAULT 0,
-    code_generation_activity_count INT           NOT NULL DEFAULT 0,
-    code_acceptance_activity_count INT           NOT NULL DEFAULT 0,
-    loc_suggested_to_add_sum       INT           NOT NULL DEFAULT 0,
-    loc_suggested_to_delete_sum    INT           NOT NULL DEFAULT 0,
-    loc_added_sum                  INT           NOT NULL DEFAULT 0,
-    loc_deleted_sum                INT           NOT NULL DEFAULT 0
+    user_initiated_interaction_count INT         NOT NULL,
+    code_generation_activity_count INT           NOT NULL,
+    code_acceptance_activity_count INT           NOT NULL,
+    loc_suggested_to_add_sum       INT           NOT NULL,
+    loc_suggested_to_delete_sum    INT           NOT NULL,
+    loc_added_sum                  INT           NOT NULL,
+    loc_deleted_sum                INT           NOT NULL
 );
 GO
 
@@ -40,13 +40,13 @@ CREATE TABLE stg.user_ide (
     ide_family                     VARCHAR(50)   NOT NULL,
     last_known_ide_version         VARCHAR(100)  NULL,
     last_known_plugin_version      VARCHAR(100)  NULL,
-    user_initiated_interaction_count INT         NOT NULL DEFAULT 0,
-    code_generation_activity_count INT           NOT NULL DEFAULT 0,
-    code_acceptance_activity_count INT           NOT NULL DEFAULT 0,
-    loc_suggested_to_add_sum       INT           NOT NULL DEFAULT 0,
-    loc_suggested_to_delete_sum    INT           NOT NULL DEFAULT 0,
-    loc_added_sum                  INT           NOT NULL DEFAULT 0,
-    loc_deleted_sum                INT           NOT NULL DEFAULT 0
+    user_initiated_interaction_count INT         NOT NULL,
+    code_generation_activity_count INT           NOT NULL,
+    code_acceptance_activity_count INT           NOT NULL,
+    loc_suggested_to_add_sum       INT           NOT NULL,
+    loc_suggested_to_delete_sum    INT           NOT NULL,
+    loc_added_sum                  INT           NOT NULL,
+    loc_deleted_sum                INT           NOT NULL
 );
 GO
 
@@ -57,13 +57,13 @@ CREATE TABLE stg.user_model_feature (
     org_login                      VARCHAR(100)  NOT NULL,
     model_name                     VARCHAR(100)  NOT NULL,
     feature                        VARCHAR(50)   NOT NULL,
-    user_initiated_interaction_count INT         NOT NULL DEFAULT 0,
-    code_generation_activity_count INT           NOT NULL DEFAULT 0,
-    code_acceptance_activity_count INT           NOT NULL DEFAULT 0,
-    loc_suggested_to_add_sum       INT           NOT NULL DEFAULT 0,
-    loc_suggested_to_delete_sum    INT           NOT NULL DEFAULT 0,
-    loc_added_sum                  INT           NOT NULL DEFAULT 0,
-    loc_deleted_sum                INT           NOT NULL DEFAULT 0
+    user_initiated_interaction_count INT         NOT NULL,
+    code_generation_activity_count INT           NOT NULL,
+    code_acceptance_activity_count INT           NOT NULL,
+    loc_suggested_to_add_sum       INT           NOT NULL,
+    loc_suggested_to_delete_sum    INT           NOT NULL,
+    loc_added_sum                  INT           NOT NULL,
+    loc_deleted_sum                INT           NOT NULL
 );
 GO
 

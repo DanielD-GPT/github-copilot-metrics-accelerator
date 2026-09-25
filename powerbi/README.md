@@ -29,20 +29,20 @@ verified.
 
 | Field | Value |
 |---|---|
-| Server | `SQL_SERVER_FQDN` from `azd env get-values` |
-| Database | `copilotmetrics` |
-| Data Connectivity mode | **DirectQuery** (recommended) or Import |
+| Server | `FABRIC_SQL_ENDPOINT` from `azd env get-values` |
+| Database | `FABRIC_WAREHOUSE_NAME` from `azd env get-values` |
+| Data Connectivity mode | **DirectQuery** (recommended for the supplied views) or Import |
 | Authentication | Microsoft account / Microsoft Entra ID |
 
-**DirectQuery** keeps storage costs at zero and data always current, but every visual interaction
-resumes the serverless database. **Import** is faster to interact with and lets SQL auto-pause —
-schedule refresh after **03:00 UTC**, since ingestion runs at 02:00 UTC.
+The supplied report queries use Warehouse views, so use DirectQuery or Import. Direct Lake is an
+option if you remodel from the underlying tables in a Fabric semantic model. Schedule Import
+refresh after **03:00 UTC**, since ingestion runs at 02:00 UTC.
 
-The account you connect with needs `db_datareader`. Add a group rather than individuals:
+The account needs Fabric item Read plus Warehouse `SELECT`. Fabric materializes a database
+principal when a grant is applied, so explicit `CREATE USER` is unnecessary:
 
 ```sql
-CREATE USER [Copilot-Report-Readers] FROM EXTERNAL PROVIDER;
-ALTER ROLE db_datareader ADD MEMBER [Copilot-Report-Readers];
+GRANT SELECT ON SCHEMA::dbo TO [Copilot-Report-Readers];
 ```
 
 Select these views:
@@ -126,7 +126,7 @@ This is the page that answers the original question.
 
 There are two independent places to restrict access. Both are **off by default**.
 
-**Database level** — `sql/06_security.sql` deploys a row-level security policy in a disabled state.
+**Warehouse level** — `sql/06_security.sql` deploys a row-level security policy in a disabled state.
 Enabling it filters every view for every consumer, including Power BI. Best when several tools read
 the warehouse.
 
@@ -149,7 +149,7 @@ publishing broadly.
 | Symptom | Fix |
 |---|---|
 | "Login failed for user" | Reader needs `db_datareader`; see step 1 |
-| First visual times out | Serverless SQL is resuming — retry once |
+| First visual times out | Fabric capacity is paused or throttled — resume it, or check the Fabric Capacity Metrics app |
 | Editor totals exceed exact totals | Cross-filtering between the two fact tables; remove any relationship between them |
 | Every row is `exact-unallocated` | The user had billed spend but no recorded IDE activity that day — check `fact_user_ide_day` |
 | `Equal Split Fallback %` is high | Users had IDE rows but zero interaction counts; the split has weak evidence |
