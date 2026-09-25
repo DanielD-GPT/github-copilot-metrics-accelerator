@@ -149,7 +149,7 @@ publishing broadly.
 | Symptom | Fix |
 |---|---|
 | "Login failed for user" | Reader needs `db_datareader`; see step 1 |
-| First visual times out | Serverless SQL is resuming — retry once |
+| First visual times out | Fabric capacity is paused or throttled — resume it, or check the Fabric Capacity Metrics app |
 | Editor totals exceed exact totals | Cross-filtering between the two fact tables; remove any relationship between them |
 | Every row is `exact-unallocated` | The user had billed spend but no recorded IDE activity that day — check `fact_user_ide_day` |
 | `Equal Split Fallback %` is high | Users had IDE rows but zero interaction counts; the split has weak evidence |

@@ -125,7 +125,7 @@ GitHub is not about to drop your history in 28 days.
 
 - Azure subscription with Contributor + User Access Administrator
 - A Microsoft Fabric workspace assigned to active Fabric capacity, with a Warehouse created
-- Fabric tenant setting **Service principals can use Fabric APIs** enabled for the Function
+- Fabric tenant setting **Service principals can call Fabric public APIs** enabled for the Function
   managed identity (directly or through an allowed security group)
 - Workspace Member or Admin permission for the identity running `azd up`, so the postprovision
   hook can grant the Function managed identity Viewer access
@@ -261,8 +261,9 @@ SELECT * FROM dbo.vw_inactive_seats ORDER BY days_since_activity DESC;
 ### Power BI
 
 [powerbi/](powerbi/) ships Power Query scripts, every DAX measure, and a build guide for a
-four-page report. Connect in **DirectQuery** to keep the serverless tier cheap, or **Import** with
-a refresh scheduled after 03:00 UTC.
+four-page report. Connect to the Warehouse SQL endpoint in **DirectQuery** for always-current
+data, or **Import** with a refresh scheduled after 03:00 UTC to minimize capacity consumption
+from interactive queries.
 
 ### Internal REST API
 
