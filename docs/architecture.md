@@ -10,7 +10,8 @@
    `raw/{dataset}/dt=YYYY-MM-DD/...` **before** any parsing.
 4. **Fan out billing** — for each licensed user, call the premium request usage endpoint with
    `user=`. This filter is the only thing that makes spend attributable.
-5. **Stage** — staging tables are cleared and bulk inserted in a single transaction.
+5. **Lock and stage** — a renewable blob lease prevents overlapping writers; staging tables in
+   Fabric Warehouse are cleared and bulk inserted in a single transaction.
 6. **Merge** — `dbo.sp_load_all` upserts dimensions, then facts, rebuilds the per-user IDE
    share, and finally runs `sp_reconcile_load`, which throws if rows failed to map.
 7. **Serve** — views feed Power BI, the internal API, and the Teams bot.
@@ -39,9 +40,8 @@ Every load is safe to re-run:
 The daily timer reloads a **trailing 7 days** rather than just yesterday, because GitHub posts
 billing corrections several days late. Re-processing overwrites with corrected values.
 
-> **No concurrency guard yet.** The timer and the backfill endpoint share staging tables. Running
-> a backfill while the timer is mid-run can corrupt a load. Avoid overlapping runs until a
-> singleton lock is added.
+The timer and backfill endpoint share staging tables. A renewable Azure Blob lease makes the load
+single-writer across Function instances; a second caller fails fast with HTTP 409.
 
 ## The allocation bridge
 
@@ -117,9 +117,9 @@ last **successful** run. Set `FAIL_ON_EMPTY_REPORT=false` to downgrade these to 
 | Control | Implementation |
 |---|---|
 | No secrets in code | GitHub credential lives only in Key Vault |
-| No SQL passwords | `azureADOnlyAuthentication: true`; the Bicep contains no admin login |
+| No SQL passwords | Fabric Warehouse connection uses the Function system-assigned managed identity |
 | Passwordless Azure access | System-assigned managed identity + RBAC |
-| Least privilege | Key Vault **Secrets User**, Storage **Blob Data Contributor**, SQL `db_datareader`/`db_datawriter`/`EXECUTE` |
+| Least privilege | Key Vault **Secrets User**, Storage **Blob Data Contributor**, Fabric workspace **Viewer**, and Warehouse schema grants |
 | No schema-modification grant | Staging is cleared with `DELETE`, so no `ALTER ON SCHEMA` is needed |
 | Transport | HTTPS only, TLS 1.2 minimum, FTPS disabled |
 | Storage | Shared key access disabled, public blob access disabled |
@@ -133,8 +133,8 @@ last **successful** run. Set `FAIL_ON_EMPTY_REPORT=false` to downgrade these to 
 - **No per-caller authorization.** Any holder of the function key can query any individual's spend.
 - **Row-level security is deployed but disabled.** Turning it on is one statement, and deliberately
   left to the customer so a first deployment succeeds without access mapping.
-- **Public network access is enabled** on SQL, Storage, and Key Vault for first-run simplicity.
-  Production should add Private Endpoints and set `defaultAction: 'Deny'`.
+- **Public network access is enabled** on Storage and Key Vault for first-run simplicity.
+  Fabric Warehouse connectivity uses its managed SQL endpoint over TCP 1433.
 
 ## Privacy
 

@@ -25,11 +25,10 @@ GO
 -- Analysts see only the cost centers listed here. Use '*' for enterprise-wide access.
 IF OBJECT_ID('dbo.report_access') IS NULL
 CREATE TABLE dbo.report_access (
-    principal_name SYSNAME       NOT NULL,   -- Entra principal, matches SUSER_SNAME()
+    principal_name VARCHAR(128)  NOT NULL,   -- Entra principal, matches SUSER_SNAME()
     cost_center    VARCHAR(200)  NOT NULL,
-    granted_at     DATETIME2(0)  NOT NULL DEFAULT SYSUTCDATETIME(),
-    granted_by     SYSNAME       NULL,
-    CONSTRAINT pk_report_access PRIMARY KEY (principal_name, cost_center)
+    granted_at     DATETIME2(0)  NOT NULL,
+    granted_by     VARCHAR(128)  NULL
 );
 GO
 
@@ -72,8 +71,8 @@ GO
        (sql/05_grants.sql already does this.)
 
     2. Add anyone who needs broad access:
-           INSERT INTO dbo.report_access (principal_name, cost_center)
-           VALUES ('analyst@contoso.com', 'Platform Engineering');
+           INSERT INTO dbo.report_access (principal_name, cost_center, granted_at)
+           VALUES ('analyst@contoso.com', 'Platform Engineering', SYSUTCDATETIME());
            -- use '*' for enterprise-wide access
 
     3. Turn the policy on:
@@ -104,7 +103,7 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @user_key INT = (SELECT user_key FROM dbo.dim_user WHERE user_login = @user_login);
+    DECLARE @user_key BIGINT = (SELECT user_key FROM dbo.dim_user WHERE user_login = @user_login);
 
     IF @user_key IS NULL
     BEGIN

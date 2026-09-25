@@ -1,4 +1,4 @@
-"""Load staging tables and invoke the MERGE procedures.
+"""Load Fabric Warehouse staging tables and invoke the MERGE procedures.
 
 Every load is idempotent: staging is truncated for the window being loaded, rows are
 bulk inserted, then a stored procedure upserts into the dims and facts. That makes it
@@ -7,12 +7,15 @@ safe to re-run the trailing week to pick up GitHub's billing corrections.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import date, timedelta
 from typing import Any
+from uuid import uuid4
 
 import pyodbc
 
 from .config import Settings
+from .warehouse_connection import connect
 
 LOGGER = logging.getLogger(__name__)
 BATCH_SIZE = 1000
@@ -130,20 +133,55 @@ COLUMN_TYPES.update(
 )
 
 
-class RunInProgress(RuntimeError):
-    """Another ingestion run holds the lock."""
+def _calendar_rows(datasets: dict[str, Sequence[dict[str, Any]]]) -> list[tuple[Any, ...]]:
+    dates: list[date] = []
+    for rows in datasets.values():
+        for row in rows:
+            for field in ("activity_date", "usage_date"):
+                value = row.get(field)
+                if value:
+                    dates.append(
+                        value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+                    )
+
+    if not dates:
+        return []
+
+    current = min(dates).replace(day=1)
+    latest = max(dates)
+    next_month = (
+        latest.replace(year=latest.year + 1, month=1, day=1)
+        if latest.month == 12
+        else latest.replace(month=latest.month + 1, day=1)
+    )
+    end = next_month - timedelta(days=1)
+
+    rows: list[tuple[Any, ...]] = []
+    while current <= end:
+        rows.append(
+            (
+                int(current.strftime("%Y%m%d")),
+                current,
+                current.year,
+                current.month,
+                current.day,
+                current.strftime("%B"),
+                current.strftime("%Y-%m"),
+                current.weekday() + 1,
+                current.weekday() >= 5,
+            )
+        )
+        current += timedelta(days=1)
+    return rows
 
 
-class SqlLoader:
+class WarehouseLoader:
     def __init__(self, settings: Settings):
-        self._connection_string = settings.sql_connection_string
+        self._connection_string = settings.fabric_warehouse_connection_string
         self._fast_executemany = settings.sql_fast_executemany
 
     def _connect(self, autocommit: bool = False) -> pyodbc.Connection:
-        # Serverless SQL may be paused; the driver retries while it resumes.
-        connection = pyodbc.connect(self._connection_string, timeout=60)
-        connection.autocommit = autocommit
-        return connection
+        return connect(self._connection_string, autocommit=autocommit)
 
     def _bulk_insert(
         self,
@@ -173,7 +211,38 @@ class SqlLoader:
 
         return total
 
-    def load(self, datasets: dict[str, Sequence[dict[str, Any]]], strict: bool = True) -> dict[str, int]:
+    @staticmethod
+    def _ensure_calendar(cursor: pyodbc.Cursor, datasets: dict[str, Sequence[dict[str, Any]]]) -> None:
+        rows = _calendar_rows(datasets)
+        if not rows:
+            return
+
+        first_key, last_key = rows[0][0], rows[-1][0]
+        cursor.execute(
+            "SELECT date_key FROM dbo.dim_date WHERE date_key BETWEEN ? AND ?",
+            first_key,
+            last_key,
+        )
+        existing = {row[0] for row in cursor.fetchall()}
+        missing = [row for row in rows if row[0] not in existing]
+        if missing:
+            cursor.executemany(
+                """
+                INSERT INTO dbo.dim_date (
+                    date_key, [date], [year], [month], [day],
+                    month_name, year_month, day_of_week, is_weekend
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                missing,
+            )
+
+    def load(
+        self,
+        datasets: dict[str, Sequence[dict[str, Any]]],
+        strict: bool = True,
+        health_check: Callable[[], None] | None = None,
+    ) -> dict[str, int]:
         """Stage every dataset and run the merge in one transaction."""
         counts: dict[str, int] = {}
 
@@ -190,12 +259,19 @@ class SqlLoader:
                 cursor.execute(f"DELETE FROM {table}")  # noqa: S608
                 counts[key] = self._bulk_insert(cursor, table, columns, datasets.get(key) or [])
                 cursor.close()
+                if health_check:
+                    health_check()
 
             cursor = connection.cursor()
+            self._ensure_calendar(cursor, datasets)
+            if health_check:
+                health_check()
             cursor.execute("{CALL dbo.sp_load_all (?)}", 1 if strict else 0)
             while cursor.nextset():
                 pass
 
+            if health_check:
+                health_check()
             connection.commit()
         except Exception:
             connection.rollback()
@@ -207,38 +283,25 @@ class SqlLoader:
         LOGGER.info("Staged rows: %s", counts)
         return counts
 
-    def begin_run(self, since, until, trigger_source: str) -> int:
-        """Claim the ingestion lock. Raises RunInProgress if another run holds it."""
-        # autocommit: the procedure manages its own transaction. An outer transaction
-        # would turn its ROLLBACK into a trancount mismatch.
+    def begin_run(self, since, until, trigger_source: str) -> str:
+        run_id = str(uuid4())
         connection = self._connect(autocommit=True)
         try:
-            cursor = connection.cursor()
-            cursor.execute(
-                """
-                SET NOCOUNT ON;
-                DECLARE @run_id BIGINT, @status VARCHAR(20);
-                EXEC dbo.sp_begin_run ?, ?, ?, 120, @run_id OUTPUT, @status OUTPUT;
-                SELECT @run_id AS run_id, @status AS status;
-                """,
+            connection.cursor().execute(
+                "{CALL dbo.sp_begin_run (?, ?, ?, ?, ?)}",
+                run_id,
                 trigger_source,
                 since,
                 until,
+                120,
             )
-            row = cursor.fetchone()
-
-            if row is None:
-                raise RuntimeError("sp_begin_run returned no result set.")
-            if row.status != "started" or row.run_id is None:
-                raise RunInProgress("An ingestion run is already in progress.")
-
-            return int(row.run_id)
+            return run_id
         finally:
             connection.close()
 
     def complete_run(
         self,
-        run_id: int,
+        run_id: str,
         status: str,
         counts: dict[str, int] | None = None,
         message: str | None = None,

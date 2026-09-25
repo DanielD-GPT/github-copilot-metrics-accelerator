@@ -9,13 +9,19 @@ param environmentName string
 @description('Azure region for all resources.')
 param location string
 
-@description('Object ID of the user or service principal that becomes the Entra admin on Azure SQL.')
+@description('Fabric workspace ID containing the Warehouse. The workspace must use Fabric capacity.')
+param fabricWorkspaceId string
+
+@description('Fabric Warehouse SQL endpoint, for example abc.datawarehouse.fabric.microsoft.com.')
+param fabricSqlEndpoint string
+
+@description('Display name of the Fabric Warehouse.')
+param fabricWarehouseName string = 'copilotmetrics'
+
+@description('Object ID of the deployment principal that receives Key Vault administration access.')
 param principalId string
 
-@description('Display name (UPN) of the Entra admin principal on Azure SQL.')
-param principalName string
-
-@description('Principal type of the SQL Entra admin. Use Application for CI/CD service principals.')
+@description('Principal type of the Key Vault administrator.')
 @allowed(['User', 'Group', 'Application'])
 param principalType string = 'User'
 
@@ -84,20 +90,6 @@ module lake './core/storage.bicep' = {
   }
 }
 
-module sql './core/sql.bicep' = {
-  name: 'sql'
-  scope: rg
-  params: {
-    location: location
-    tags: tags
-    serverName: '${abbrs.sqlServers}${resourceToken}'
-    databaseName: 'copilotmetrics'
-    principalId: principalId
-    principalName: principalName
-    principalType: principalType
-  }
-}
-
 module functionApp './core/function.bicep' = {
   name: 'function'
   scope: rg
@@ -111,8 +103,9 @@ module functionApp './core/function.bicep' = {
     keyVaultName: keyVault.outputs.name
     lakeAccountName: lake.outputs.name
     lakeFilesystemName: lake.outputs.filesystemName
-    sqlServerFqdn: sql.outputs.serverFqdn
-    sqlDatabaseName: sql.outputs.databaseName
+    fabricWorkspaceId: fabricWorkspaceId
+    fabricSqlEndpoint: fabricSqlEndpoint
+    fabricWarehouseName: fabricWarehouseName
     githubEnterprise: githubEnterprise
     githubOrgs: githubOrgs
     githubAppId: githubAppId
@@ -137,8 +130,9 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output LAKE_ACCOUNT_NAME string = lake.outputs.name
 output LAKE_FILESYSTEM_NAME string = lake.outputs.filesystemName
-output SQL_SERVER_FQDN string = sql.outputs.serverFqdn
-output SQL_DATABASE_NAME string = sql.outputs.databaseName
+output FABRIC_WORKSPACE_ID string = fabricWorkspaceId
+output FABRIC_SQL_ENDPOINT string = fabricSqlEndpoint
+output FABRIC_WAREHOUSE_NAME string = fabricWarehouseName
 output FUNCTION_APP_NAME string = functionApp.outputs.name
 output FUNCTION_APP_URI string = functionApp.outputs.uri
 output FUNCTION_PRINCIPAL_ID string = functionApp.outputs.principalId

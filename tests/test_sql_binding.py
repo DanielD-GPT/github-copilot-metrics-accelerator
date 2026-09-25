@@ -4,9 +4,10 @@ pyodbc's fast_executemany infers parameter types from the first row. On money co
 that inference can silently truncate later rows, producing wrong-but-plausible dollar
 figures. These tests pin the explicit types so the inference never happens.
 
-They exercise binding only. Whether Azure SQL round-trips the values intact still
-needs a real database.
+They exercise binding only. Whether Fabric Warehouse round-trips the values intact
+still needs a real warehouse.
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -16,11 +17,12 @@ pytest.importorskip("pyodbc")
 import pyodbc  # noqa: E402
 
 from shared.config import Settings  # noqa: E402
-from shared.sql_loader import (  # noqa: E402
+from shared.warehouse_loader import (  # noqa: E402
     BILLING_COLUMNS,
     COLUMN_TYPES,
     STAGING_TABLES,
-    SqlLoader,
+    WarehouseLoader,
+    _calendar_rows,
 )
 
 
@@ -43,11 +45,11 @@ def _loader(**overrides):
     base = {
         "github_orgs": ["acme"],
         "key_vault_name": "kv",
-        "sql_connection_string": "Driver=...",
+        "fabric_warehouse_connection_string": "Driver=...",
         "lake_account_name": "lake",
     }
     base.update(overrides)
-    return SqlLoader(Settings(**base))
+    return WarehouseLoader(Settings(**base))
 
 
 class TestColumnTypeMap:
@@ -124,7 +126,7 @@ class TestBulkInsertBinding:
         assert cursor.batches == []
 
     def test_batches_respect_the_chunk_size(self):
-        from shared.sql_loader import BATCH_SIZE
+        from shared.warehouse_loader import BATCH_SIZE
 
         rows = [{"user_login": f"u{i}"} for i in range(BATCH_SIZE + 5)]
         cursor = _FakeCursor()
@@ -132,3 +134,20 @@ class TestBulkInsertBinding:
 
         assert total == BATCH_SIZE + 5
         assert len(cursor.batches) == 2
+
+
+class TestCalendarRows:
+    def test_builds_complete_months_for_loaded_dates(self):
+        rows = _calendar_rows(
+            {
+                "user_day": [{"activity_date": "2026-02-14"}],
+                "premium_requests": [{"usage_date": "2026-03-02"}],
+            }
+        )
+
+        assert rows[0][0:2] == (20260201, date(2026, 2, 1))
+        assert rows[-1][0:2] == (20260331, date(2026, 3, 31))
+        assert len(rows) == 59
+
+    def test_empty_datasets_need_no_calendar_rows(self):
+        assert _calendar_rows({"user_day": []}) == []

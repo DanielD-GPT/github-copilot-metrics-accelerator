@@ -22,7 +22,7 @@ class TestValidate:
         base = dict(
             github_orgs=["acme"],
             key_vault_name="kv",
-            sql_connection_string="Driver=...",
+            fabric_warehouse_connection_string="Driver=...",
             lake_account_name="lake",
         )
         base.update(overrides)
@@ -41,8 +41,8 @@ class TestValidate:
             self._valid(metrics_scope="galaxy").validate()
 
     def test_requires_azure_targets(self):
-        with pytest.raises(ValueError, match="SQL_CONNECTION_STRING"):
-            self._valid(sql_connection_string="").validate()
+        with pytest.raises(ValueError, match="FABRIC_WAREHOUSE_CONNECTION_STRING"):
+            self._valid(fabric_warehouse_connection_string="").validate()
         with pytest.raises(ValueError, match="LAKE_ACCOUNT_NAME"):
             self._valid(lake_account_name="").validate()
 

@@ -11,9 +11,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-import pyodbc
-
 from .config import Settings
+from .warehouse_connection import connect
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,11 +32,11 @@ def jsonable(value: Any) -> Any:
 
 class SpendQueries:
     def __init__(self, settings: Settings):
-        self._connection_string = settings.sql_connection_string
+        self._connection_string = settings.fabric_warehouse_connection_string
 
     def _fetch(self, sql: str, params: Sequence[Any]) -> list[dict[str, Any]]:
         # pyodbc's context manager commits but does not close, so close explicitly.
-        connection = pyodbc.connect(self._connection_string, timeout=60)
+        connection = connect(self._connection_string)
         try:
             cursor = connection.cursor()
             cursor.execute(sql, *params)

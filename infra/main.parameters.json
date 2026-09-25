@@ -8,11 +8,17 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
+    "fabricWorkspaceId": {
+      "value": "${FABRIC_WORKSPACE_ID}"
+    },
+    "fabricSqlEndpoint": {
+      "value": "${FABRIC_SQL_ENDPOINT}"
+    },
+    "fabricWarehouseName": {
+      "value": "${FABRIC_WAREHOUSE_NAME=copilotmetrics}"
+    },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
-    },
-    "principalName": {
-      "value": "${AZURE_PRINCIPAL_NAME}"
     },
     "principalType": {
       "value": "${AZURE_PRINCIPAL_TYPE=User}"

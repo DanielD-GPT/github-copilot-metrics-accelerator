@@ -7,8 +7,9 @@ param applicationInsightsConnectionString string
 param keyVaultName string
 param lakeAccountName string
 param lakeFilesystemName string
-param sqlServerFqdn string
-param sqlDatabaseName string
+param fabricWorkspaceId string
+param fabricSqlEndpoint string
+param fabricWarehouseName string
 param githubEnterprise string
 param githubOrgs string
 param ingestionSchedule string
@@ -161,8 +162,12 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: lakeFilesystemName
         }
         {
-          name: 'SQL_CONNECTION_STRING'
-          value: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServerFqdn},1433;Database=${sqlDatabaseName};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60;'
+          name: 'FABRIC_WORKSPACE_ID'
+          value: fabricWorkspaceId
+        }
+        {
+          name: 'FABRIC_WAREHOUSE_CONNECTION_STRING'
+          value: 'Driver={ODBC Driver 18 for SQL Server};Server=${fabricSqlEndpoint},1433;Database=${fabricWarehouseName};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60;'
         }
         {
           name: 'INGESTION_SCHEDULE'

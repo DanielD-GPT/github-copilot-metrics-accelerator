@@ -69,7 +69,7 @@ def _settings(**overrides):
     base = {
         "github_orgs": ["acme"],
         "key_vault_name": "kv",
-        "sql_connection_string": "Driver=...",
+        "fabric_warehouse_connection_string": "Driver=...",
         "lake_account_name": "lake",
         "max_billing_users": 100,
     }

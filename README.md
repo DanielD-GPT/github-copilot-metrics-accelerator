@@ -66,7 +66,7 @@ flowchart LR
     KV[Key Vault<br/>GitHub PAT / App key]
     FN[Function App<br/>Python, Flex Consumption<br/>timer 02:00 UTC + HTTP backfill]
     DL[(ADLS Gen2<br/>raw JSON, dt=YYYY-MM-DD)]
-    SQL[(Azure SQL Serverless<br/>star schema)]
+    SQL[(Microsoft Fabric Warehouse<br/>star schema)]
     AI[App Insights]
   end
 
@@ -98,7 +98,7 @@ infrastructure and no extra cost.
 | **Seats API** | Authoritative list of licensed users, which drives the billing fan-out. |
 | **Function App (Flex Consumption)** | Handles report downloads, per-user billing fan-out, retries, and the metrics-to-billing join. Scales to zero. |
 | **ADLS Gen2 raw zone** | Immutable archive so the warehouse can be rebuilt after a transform bug without re-querying GitHub. |
-| **Azure SQL Serverless** | Star schema fits the `user × model × surface × time × $` question; T-SQL expresses the allocation cleanly. Auto-pauses when idle. |
+| **Microsoft Fabric Warehouse** | Star schema fits the `user × model × surface × time × $` question, T-SQL expresses the allocation cleanly, and Power BI can use Direct Lake, DirectQuery, or Import. |
 | **Key Vault + Managed Identity** | No credentials in code, app settings, or source control. |
 
 ### Data retention
@@ -115,15 +115,20 @@ GitHub is not about to drop your history in 28 days.
 |---|---|
 | Function App (Flex Consumption) | ~$0 — well inside the free grant at this volume |
 | ADLS Gen2 | Pennies |
-| Azure SQL (GP_S_Gen5, auto-pause) | $5–15 |
+| Fabric Warehouse | Uses capacity already assigned to the target Fabric workspace |
 | Key Vault + App Insights | ~$1–3 |
-| **Total** | **~$10–20/month** |
+| **Incremental Azure total** | **~$1–3/month plus shared Fabric capacity** |
 
 ---
 
 ## Prerequisites
 
 - Azure subscription with Contributor + User Access Administrator
+- A Microsoft Fabric workspace assigned to active Fabric capacity, with a Warehouse created
+- Fabric tenant setting **Service principals can use Fabric APIs** enabled for the Function
+  managed identity (directly or through an allowed security group)
+- Workspace Member or Admin permission for the identity running `azd up`, so the postprovision
+  hook can grant the Function managed identity Viewer access
 - [Azure Developer CLI](https://aka.ms/azd), [Azure CLI](https://aka.ms/azcli), Python 3.11, and `sqlcmd`
 - The **"Copilot usage metrics"** enterprise policy set to *Enabled everywhere*, or the report
   endpoints return nothing
@@ -158,11 +163,15 @@ cd github-copilot-metrics-accelerator
 azd auth login
 azd env new copilot-metrics
 
-# Entra admin for Azure SQL (no SQL passwords exist in this template)
-azd env set AZURE_PRINCIPAL_ID   "$(az ad signed-in-user show --query id -o tsv)"
-azd env set AZURE_PRINCIPAL_NAME "$(az ad signed-in-user show --query displayName -o tsv)"
+# Key Vault deployment administrator
+azd env set AZURE_PRINCIPAL_ID "$(az ad signed-in-user show --query id -o tsv)"
 # Deploying from CI with a service principal? Also set:
 # azd env set AZURE_PRINCIPAL_TYPE Application
+
+# Existing Fabric Warehouse. Copy the SQL endpoint from Warehouse settings.
+azd env set FABRIC_WORKSPACE_ID   "<workspace-guid>"
+azd env set FABRIC_SQL_ENDPOINT   "<warehouse-id>.datawarehouse.fabric.microsoft.com"
+azd env set FABRIC_WAREHOUSE_NAME "copilotmetrics"
 
 # GitHub scope. GITHUB_ORGS is required: both metrics and billing are pulled per org.
 azd env set GITHUB_ENTERPRISE "your-enterprise-slug"
@@ -171,7 +180,10 @@ azd env set GITHUB_ORGS       "org-one,org-two"
 azd up
 ```
 
-`azd up` provisions everything and the postprovision hook applies `sql/01`–`05`.
+`azd up` provisions the Azure resources, grants the Function managed identity Fabric workspace
+Viewer access, and applies `sql/01`–`06` to the existing Warehouse. Fabric capacity, workspace,
+and Warehouse creation remain prerequisites because Warehouse is a Fabric item, not an ARM
+resource. The Function connects over TDS with `ActiveDirectoryMsi`; no SQL password is stored.
 
 ### Store the GitHub credential
 

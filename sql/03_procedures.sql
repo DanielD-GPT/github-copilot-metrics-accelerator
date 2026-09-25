@@ -6,59 +6,6 @@
     posts billing corrections for several days after the fact.
 */
 
------------------------------------------------------------------- dim_date fill
-
-CREATE OR ALTER PROCEDURE dbo.sp_fill_dim_date
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @min DATE, @max DATE;
-
-    SELECT @min = MIN(d), @max = MAX(d)
-    FROM (
-        SELECT MIN(activity_date) AS d FROM stg.user_day
-        UNION ALL SELECT MAX(activity_date) FROM stg.user_day
-        UNION ALL SELECT MIN(usage_date) FROM stg.premium_requests
-        UNION ALL SELECT MAX(usage_date) FROM stg.premium_requests
-        UNION ALL SELECT MIN(activity_date) FROM stg.user_teams
-        UNION ALL SELECT MAX(activity_date) FROM stg.user_teams
-    ) bounds
-    WHERE d IS NOT NULL;
-
-    IF @min IS NULL RETURN;
-
-    -- Extend to full calendar months so Power BI time intelligence has a
-    -- contiguous date table with no gaps.
-    SET @min = DATEFROMPARTS(YEAR(@min), MONTH(@min), 1);
-    SET @max = EOMONTH(@max);
-
-    ;WITH n AS (
-        SELECT TOP (DATEDIFF(DAY, @min, @max) + 1)
-               ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS offset
-        FROM sys.all_objects a CROSS JOIN sys.all_objects b
-    ),
-    calendar AS (
-        SELECT DATEADD(DAY, offset, @min) AS d FROM n
-    )
-    INSERT INTO dbo.dim_date (date_key, [date], [year], [month], [day],
-                              month_name, year_month, day_of_week, is_weekend)
-    SELECT
-        CONVERT(INT, CONVERT(CHAR(8), c.d, 112)),
-        c.d,
-        YEAR(c.d),
-        MONTH(c.d),
-        DAY(c.d),
-        DATENAME(MONTH, c.d),
-        CONVERT(CHAR(7), c.d, 126),
-        -- Deterministic weekday: 1900-01-01 was a Monday, so this ignores @@DATEFIRST.
-        (DATEDIFF(DAY, '19000101', c.d) % 7) + 1,
-        CASE WHEN (DATEDIFF(DAY, '19000101', c.d) % 7) >= 5 THEN 1 ELSE 0 END
-    FROM calendar c
-    WHERE NOT EXISTS (SELECT 1 FROM dbo.dim_date dd WHERE dd.[date] = c.d);
-END;
-GO
-
 ------------------------------------------------------------------- dimensions
 
 CREATE OR ALTER PROCEDURE dbo.sp_merge_dimensions
@@ -225,10 +172,10 @@ BEGIN
     WHEN NOT MATCHED BY TARGET THEN
         INSERT (date_key, user_key, org_key, model_key, product_key,
                 net_quantity, gross_quantity, price_per_unit,
-                gross_amount, discount_amount, net_amount)
+                gross_amount, discount_amount, net_amount, loaded_at)
         VALUES (src.date_key, src.user_key, src.org_key, src.model_key, src.product_key,
                 src.net_quantity, src.gross_quantity, src.price_per_unit,
-                src.gross_amount, src.discount_amount, src.net_amount);
+                src.gross_amount, src.discount_amount, src.net_amount, SYSUTCDATETIME());
 END;
 GO
 
@@ -290,12 +237,13 @@ BEGIN
                 used_agent, used_chat, used_cli, used_copilot_app, used_copilot_cloud_agent,
                 used_code_review_active, used_code_review_passive,
                 user_initiated_interaction_count, code_generation_activity_count,
-                code_acceptance_activity_count, loc_suggested_to_add_sum, loc_added_sum, loc_deleted_sum)
+                code_acceptance_activity_count, loc_suggested_to_add_sum, loc_added_sum,
+                loc_deleted_sum, loaded_at)
         VALUES (src.date_key, src.user_key, src.org_key, src.ai_credits_used, src.adoption_phase,
                 src.adoption_phase_number, src.used_agent, src.used_chat, src.used_cli,
                 src.used_copilot_app, src.used_copilot_cloud_agent, src.used_code_review_active,
                 src.used_code_review_passive, src.interactions, src.generations, src.acceptances,
-                src.loc_suggested, src.loc_added, src.loc_deleted);
+                src.loc_suggested, src.loc_added, src.loc_deleted, SYSUTCDATETIME());
 
     -- user x day x ide
     MERGE dbo.fact_user_ide_day AS tgt
@@ -331,10 +279,10 @@ BEGIN
         INSERT (date_key, user_key, org_key, editor_key, last_known_ide_version,
                 last_known_plugin_version, user_initiated_interaction_count,
                 code_generation_activity_count, code_acceptance_activity_count,
-                loc_added_sum, loc_deleted_sum)
+                loc_added_sum, loc_deleted_sum, loaded_at)
         VALUES (src.date_key, src.user_key, src.org_key, src.editor_key, src.ide_version,
                 src.plugin_version, src.interactions, src.generations, src.acceptances,
-                src.loc_added, src.loc_deleted);
+                src.loc_added, src.loc_deleted, SYSUTCDATETIME());
 
     -- user x day x model x feature
     MERGE dbo.fact_user_model_feature_day AS tgt
@@ -362,9 +310,9 @@ BEGIN
     WHEN NOT MATCHED BY TARGET THEN
         INSERT (date_key, user_key, org_key, model_key, feature_key,
                 user_initiated_interaction_count, code_generation_activity_count,
-                code_acceptance_activity_count)
+                code_acceptance_activity_count, loaded_at)
         VALUES (src.date_key, src.user_key, src.org_key, src.model_key, src.feature_key,
-                src.interactions, src.generations, src.acceptances);
+                src.interactions, src.generations, src.acceptances, SYSUTCDATETIME());
 
     -- user x day x team
     MERGE dbo.fact_user_team_day AS tgt
@@ -378,8 +326,8 @@ BEGIN
     ) AS src
     ON tgt.date_key = src.date_key AND tgt.user_key = src.user_key AND tgt.team_key = src.team_key
     WHEN NOT MATCHED BY TARGET THEN
-        INSERT (date_key, user_key, team_key)
-        VALUES (src.date_key, src.user_key, src.team_key);
+        INSERT (date_key, user_key, team_key, loaded_at)
+        VALUES (src.date_key, src.user_key, src.team_key, SYSUTCDATETIME());
 END;
 GO
 
@@ -443,9 +391,11 @@ BEGIN
         JOIN basis b
           ON b.date_key = s.date_key AND b.user_key = s.user_key AND b.org_key = s.org_key
     )
-    INSERT INTO dbo.fact_user_ide_share (date_key, user_key, org_key, editor_key, share, weight_basis)
+    INSERT INTO dbo.fact_user_ide_share (
+        date_key, user_key, org_key, editor_key, share, weight_basis, loaded_at
+    )
     SELECT date_key, user_key, org_key, editor_key,
-           CAST(share AS DECIMAL(9,8)), weight_basis
+           CAST(share AS DECIMAL(9,8)), weight_basis, SYSUTCDATETIME()
     FROM weighted
     WHERE share IS NOT NULL AND share > 0;
 END;
@@ -515,43 +465,19 @@ GO
 ------------------------------------------------------------- run concurrency
 
 /*
-    Ingestion runs share staging tables, so two concurrent runs would corrupt each
-    other. sp_getapplock makes the check-and-claim atomic across Function instances.
-
-    Contention is reported through @status ('started' or 'locked') rather than THROW.
-    Raising for an expected condition forced the caller to parse driver error text,
-    which is locale-dependent and breaks when SQL Server reports a different error
-    first (for example trancount mismatch after a rollback inside a nested transaction).
+    Ingestion runs share staging tables, so the Function acquires a renewable Azure
+    Blob lease before calling this procedure. Fabric Warehouse doesn't support
+    sp_getapplock; this procedure records status only.
 */
 CREATE OR ALTER PROCEDURE dbo.sp_begin_run
+    @run_id VARCHAR(36),
     @trigger_source VARCHAR(30),
     @since DATE,
     @until DATE,
-    @stale_after_minutes INT = 120,
-    @run_id BIGINT OUTPUT,
-    @status VARCHAR(20) OUTPUT
+    @stale_after_minutes INT = 120
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET XACT_ABORT ON;
-
-    SET @run_id = NULL;
-    SET @status = 'locked';
-
-    BEGIN TRANSACTION;
-
-    DECLARE @lock INT;
-    EXEC @lock = sp_getapplock
-        @Resource = 'copilot_metrics_ingestion',
-        @LockMode = 'Exclusive',
-        @LockOwner = 'Transaction',
-        @LockTimeout = 5000;
-
-    IF @lock < 0
-    BEGIN
-        ROLLBACK TRANSACTION;
-        RETURN;
-    END
 
     -- A crashed run leaves its row 'running' forever; retire it after the threshold.
     UPDATE dbo.ingestion_run
@@ -561,24 +487,15 @@ BEGIN
     WHERE status = 'running'
       AND started_at < DATEADD(MINUTE, -@stale_after_minutes, SYSUTCDATETIME());
 
-    IF EXISTS (SELECT 1 FROM dbo.ingestion_run WHERE status = 'running')
-    BEGIN
-        ROLLBACK TRANSACTION;
-        RETURN;
-    END
-
-    INSERT INTO dbo.ingestion_run (since_date, until_date, trigger_source, status)
-    VALUES (@since, @until, @trigger_source, 'running');
-
-    SET @run_id = SCOPE_IDENTITY();
-    SET @status = 'started';
-
-    COMMIT TRANSACTION;
+    INSERT INTO dbo.ingestion_run (
+        run_id, started_at, since_date, until_date, trigger_source, status
+    )
+    VALUES (@run_id, SYSUTCDATETIME(), @since, @until, @trigger_source, 'running');
 END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_complete_run
-    @run_id BIGINT,
+    @run_id VARCHAR(36),
     @status VARCHAR(20),
     @rows_user_day INT = NULL,
     @rows_user_ide INT = NULL,
@@ -612,7 +529,6 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    EXEC dbo.sp_fill_dim_date;
     EXEC dbo.sp_merge_dimensions;
     EXEC dbo.sp_merge_user_activity;
     EXEC dbo.sp_merge_premium_requests;

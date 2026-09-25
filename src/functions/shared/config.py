@@ -49,7 +49,7 @@ class Settings:
     github_app_installation_id: str = ""
     lake_account_name: str = ""
     lake_filesystem_name: str = "raw"
-    sql_connection_string: str = ""
+    fabric_warehouse_connection_string: str = ""
     backfill_days: int = 28
     reload_trailing_days: int = 7
 
@@ -92,8 +92,8 @@ class Settings:
             problems.append("GITHUB_ORGS is required for seats and billing.")
         if not self.key_vault_name:
             problems.append("KEY_VAULT_NAME is required.")
-        if not self.sql_connection_string:
-            problems.append("SQL_CONNECTION_STRING is required.")
+        if not self.fabric_warehouse_connection_string:
+            problems.append("FABRIC_WAREHOUSE_CONNECTION_STRING is required.")
         if not self.lake_account_name:
             problems.append("LAKE_ACCOUNT_NAME is required.")
         if self.max_backfill_days < 1:
@@ -117,7 +117,9 @@ def load_settings() -> Settings:
         github_app_installation_id=os.environ.get("GITHUB_APP_INSTALLATION_ID", ""),
         lake_account_name=os.environ.get("LAKE_ACCOUNT_NAME", ""),
         lake_filesystem_name=os.environ.get("LAKE_FILESYSTEM_NAME", "raw"),
-        sql_connection_string=os.environ.get("SQL_CONNECTION_STRING", ""),
+        fabric_warehouse_connection_string=os.environ.get(
+            "FABRIC_WAREHOUSE_CONNECTION_STRING", ""
+        ),
         sql_fast_executemany=_flag(os.environ.get("SQL_FAST_EXECUTEMANY", "true"), True),
         backfill_days=int(os.environ.get("BACKFILL_DAYS", "28")),
         reload_trailing_days=int(os.environ.get("RELOAD_TRAILING_DAYS", "7")),
